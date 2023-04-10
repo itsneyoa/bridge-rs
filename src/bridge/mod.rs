@@ -1,13 +1,15 @@
 mod config;
 mod discord;
 mod minecraft;
-mod prelude;
+mod types;
 
+use crate::prelude::*;
+use colored::Colorize;
 use config::Config;
 use discord::Discord;
 use minecraft::Minecraft;
-use prelude::*;
 use std::sync::Arc;
+pub use types::*;
 
 pub struct Bridge {
     minecraft: Minecraft,
@@ -31,8 +33,8 @@ impl Bridge {
     async fn new() -> Result<Self> {
         let config = Arc::new(Config::new()?);
 
-        let (minecraft_sender, discord_reciever) = flume::unbounded(); // Minecraft -> Discord
-        let (discord_sender, minecraft_reciever) = flume::unbounded(); // Discord -> Minecraft
+        let (minecraft_sender, discord_reciever) = flume::unbounded::<ToDiscord>();
+        let (discord_sender, minecraft_reciever) = flume::unbounded::<ToMinecraft>();
 
         Ok(Self {
             minecraft: Minecraft::new((minecraft_sender, minecraft_reciever), config.clone()).await,
@@ -47,7 +49,9 @@ impl Bridge {
             let rx = rx.clone();
             tokio::spawn(async move {
                 if let Err(e) = self.minecraft.start().await {
-                    rx.send_async(e).await.expect("Failed to report minecraft error");
+                    rx.send_async(e)
+                        .await
+                        .expect("Failed to report minecraft error");
                 }
             });
         }
@@ -55,7 +59,9 @@ impl Bridge {
         {
             tokio::spawn(async move {
                 if let Err(e) = self.discord.start().await {
-                    rx.send_async(e).await.expect("Failed to report discord error");
+                    rx.send_async(e)
+                        .await
+                        .expect("Failed to report discord error");
                 }
             });
         }

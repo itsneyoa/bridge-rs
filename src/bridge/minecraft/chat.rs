@@ -1,4 +1,4 @@
-use super::prelude::*;
+use crate::bridge::{Chat, ToDiscord};
 use azalea::chat::ChatPacket;
 
 mod regex {
@@ -14,7 +14,7 @@ mod regex {
     }
 }
 
-pub fn handle(packet: ChatPacket) -> Option<BridgeMessage> {
+pub fn handle(packet: ChatPacket) -> Option<ToDiscord> {
     let message = packet.content();
 
     if regex::DASHES.is_match(&message) {
@@ -32,7 +32,7 @@ pub fn handle(packet: ChatPacket) -> Option<BridgeMessage> {
     None
 }
 
-fn handle_guild_message(message: &str) -> Option<BridgeMessage> {
+fn handle_guild_message(message: &str) -> Option<ToDiscord> {
     if let Some(captures) = regex::GUILD_MESSAGE.captures_iter(message).next() {
         let mut iter = captures.iter().skip(1);
 
@@ -41,13 +41,13 @@ fn handle_guild_message(message: &str) -> Option<BridgeMessage> {
             iter.next().flatten()?.as_str(),
         );
 
-        return Some(BridgeMessage::new(username, message, Chat::Guild));
+        return Some(ToDiscord::message(username, message, Chat::Guild));
     };
 
     None
 }
 
-fn handle_officer_message(message: &str) -> Option<BridgeMessage> {
+fn handle_officer_message(message: &str) -> Option<ToDiscord> {
     if let Some(captures) = regex::OFFICER_MESSAGE.captures_iter(message).next() {
         let mut iter = captures.iter().skip(1);
 
@@ -56,7 +56,7 @@ fn handle_officer_message(message: &str) -> Option<BridgeMessage> {
             iter.next().flatten()?.as_str(),
         );
 
-        return Some(BridgeMessage::new(username, message, Chat::Officer));
+        return Some(ToDiscord::message(username, message, Chat::Officer));
     };
 
     None

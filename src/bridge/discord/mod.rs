@@ -1,8 +1,7 @@
-mod prelude;
-
-use super::config::Config;
-use prelude::*;
-use serenity::{async_trait, model::prelude::*};
+use super::{config::Config, Chat, ToDiscord, ToMinecraft};
+use crate::prelude::*;
+use flume::{Receiver, Sender};
+use serenity::{async_trait, model::prelude::*, prelude::*};
 use std::sync::Arc;
 use url::Url;
 
@@ -12,7 +11,10 @@ pub struct Discord {
 }
 
 impl Discord {
-    pub async fn new((tx, rx): BridgeChannel, config: Arc<Config>) -> Result<Self> {
+    pub async fn new(
+        (tx, rx): (Sender<ToMinecraft>, Receiver<ToDiscord>),
+        config: Arc<Config>,
+    ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
         let client = Client::builder(&config.token, intents)
@@ -36,8 +38,8 @@ impl Discord {
 
 struct Handler {
     config: Arc<Config>,
-    sender: BridgeSender,
-    reciever: BridgeReciever,
+    sender: Sender<ToMinecraft>,
+    reciever: Receiver<ToDiscord>,
 }
 
 #[async_trait]
@@ -54,7 +56,7 @@ impl EventHandler for Handler {
         };
 
         self.sender
-            .send_async(BridgeMessage::new(
+            .send_async(ToMinecraft::message(
                 msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
                 msg.content,
                 chat,
@@ -73,20 +75,26 @@ impl EventHandler for Handler {
                 .expect("Officer webhook not found"),
         );
 
-        while let Ok(msg) = self.reciever.recv_async().await {
-            let chat = match msg.chat {
-                Chat::Guild => &guild,
-                Chat::Officer => &officer,
-            };
+        while let Ok(payload) = self.reciever.recv_async().await {
+            use ToDiscord::*;
+            match payload {
+                Message(msg) => {
+                    let chat = match msg.chat {
+                        Chat::Guild => &guild,
+                        Chat::Officer => &officer,
+                    };
 
-            let _ = chat // Currently we don't care if this fails - maybe add retrying?
-                .execute(&ctx.http, false, |builder| {
-                    builder
-                        .content(msg.content)
-                        .username(&msg.author)
-                        .avatar_url(format!("https://mc-heads.net/avatar/{}/512", msg.author))
-                })
-                .await;
+                    let _ = chat // Currently we don't care if this fails - maybe add retrying?
+                        .execute(&ctx.http, false, |builder| {
+                            builder
+                                .content(msg.content)
+                                .username(&msg.user)
+                                .avatar_url(format!("https://mc-heads.net/avatar/{}/512", msg.user))
+                        })
+                        .await;
+                }
+                Event(event) => todo!(),
+            }
         }
     }
 }

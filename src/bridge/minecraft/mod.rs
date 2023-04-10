@@ -1,11 +1,12 @@
 mod chat;
-mod prelude;
 
-use super::config::Config;
+use super::{config::Config, Chat, ToDiscord, ToMinecraft};
+use crate::prelude::*;
+pub use azalea::prelude::*;
 use azalea::{
     protocol::packets::game::ClientboundGamePacket::Disconnect, ClientInformation, JoinError,
 };
-use prelude::*;
+use flume::{Receiver, Sender};
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::UnboundedReceiver,
@@ -19,13 +20,16 @@ const HOST: &str = "mc.hypixel.io";
 
 pub struct Minecraft {
     pub account: Account,
-    sender: BridgeSender,
-    reciever: BridgeReciever,
+    sender: Sender<ToDiscord>,
+    reciever: Receiver<ToMinecraft>,
     _config: Arc<Config>,
 }
 
 impl Minecraft {
-    pub async fn new((tx, rx): BridgeChannel, config: Arc<Config>) -> Self {
+    pub async fn new(
+        (tx, rx): (Sender<ToDiscord>, Receiver<ToMinecraft>),
+        config: Arc<Config>,
+    ) -> Self {
         #[cfg(debug_assertions)]
         let account = Account::offline("Bridge");
         #[cfg(not(debug_assertions))]
@@ -52,13 +56,22 @@ impl Minecraft {
                     {
                         let rx = self.reciever.clone();
                         tokio::spawn(async move {
-                            while let Ok(msg) = rx.recv_async().await {
-                                let prefix = match msg.chat {
-                                    Chat::Guild => "gc",
-                                    Chat::Officer => "oc",
-                                };
+                            while let Ok(payload) = rx.recv_async().await {
+                                use ToMinecraft::*;
+                                match payload {
+                                    Message(msg) => {
+                                        let prefix = match msg.chat {
+                                            Chat::Guild => "gc",
+                                            Chat::Officer => "oc",
+                                        };
 
-                                client.chat(&format!("/{prefix} {}: {}", msg.author, msg.content))
+                                        client.chat(&format!(
+                                            "/{prefix} {}: {}",
+                                            msg.user, msg.content
+                                        ))
+                                    }
+                                    Command(cmd) => client.chat(&cmd),
+                                }
                             }
                         });
                     }
