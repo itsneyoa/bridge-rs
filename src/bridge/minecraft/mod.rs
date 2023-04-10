@@ -1,6 +1,7 @@
 mod plugin;
 mod prelude;
 
+use super::config::Config;
 use azalea::{
     protocol::packets::game::ClientboundGamePacket::Disconnect, ClientInformation, JoinError,
 };
@@ -19,12 +20,13 @@ const HOST: &str = "mc.hypixel.io";
 
 pub struct Minecraft {
     pub account: Account,
-    sender: Sender<Message>,
-    reciever: Arc<Mutex<Receiver<Message>>>,
+    sender: Sender<BridgeMessage>,
+    reciever: Arc<Mutex<Receiver<BridgeMessage>>>,
+    _config: Arc<Config>,
 }
 
 impl Minecraft {
-    pub async fn new((tx, rx): (Sender<Message>, Receiver<Message>)) -> Self {
+    pub async fn new((tx, rx): BridgeChannel, config: Arc<Config>) -> Self {
         #[cfg(debug_assertions)]
         let account = Account::offline("Bridge");
         #[cfg(not(debug_assertions))]
@@ -36,6 +38,7 @@ impl Minecraft {
             account,
             sender: tx,
             reciever: Arc::new(Mutex::new(rx)),
+            _config: config,
         }
     }
 
@@ -63,11 +66,11 @@ impl Minecraft {
                             Event::Login => delay = Duration::from_secs(5),
                             Event::Chat(msg) => {
                                 let msg = msg.content().to_string();
-                                
+
                                 // TODO: Message parsing!
                                 if msg.starts_with("Guild > ") {
                                     self.sender
-                                        .send(Message::new("neyoa", msg))
+                                        .send(BridgeMessage::new("neyoa", msg, Chat::Guild))
                                         .await
                                         .expect("Failed to send minecraft message to discord");
                                 }

@@ -9,6 +9,15 @@ azalea = { git = "https://github.com/mat-1/azalea" }
 colored = "2.0.0"
 dotenv = "0.15.0"
 parking_lot = "0.12.1"
+serenity = { version = "0.11.5", default-features = false, features = [
+    "builder",
+    "client",
+    "utils",
+    "rustls_backend",
+    "gateway",
+    "http",
+    "model",
+] }
 tokio = "1.27.0"
 
 [profile.dev]

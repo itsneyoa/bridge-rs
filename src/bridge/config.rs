@@ -13,8 +13,8 @@ pub struct Config {
 
 #[derive(Debug)]
 pub struct ConfigChannels {
-    pub guild: String,
-    pub officer: String,
+    pub guild: u64,
+    pub officer: u64,
 }
 
 impl Config {
@@ -33,11 +33,14 @@ impl Config {
     }
 }
 
-fn required(key: &str) -> Result<String> {
+fn required<T: std::str::FromStr>(key: &str) -> Result<T> {
     let val = env::var(key);
     if let Ok(val) = val {
         if !val.is_empty() {
-            return Ok(val);
+            return match val.parse::<T>() {
+                Ok(val) => Ok(val),
+                Err(_) => Err(anyhow!("ENV `{key}` is not set to a valid value")),
+            };
         }
     }
 

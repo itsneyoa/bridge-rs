@@ -1,15 +1,18 @@
 mod config;
+mod discord;
 mod minecraft;
 mod prelude;
 
 use config::Config;
+use discord::Discord;
 use minecraft::Minecraft;
 use prelude::*;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub struct Bridge {
-    _config: Config,
     minecraft: Minecraft,
+    discord: Discord,
 }
 
 pub async fn create_bridge() -> Result<()> {
@@ -27,24 +30,14 @@ pub async fn create_bridge() -> Result<()> {
 
 impl Bridge {
     async fn new() -> Result<Self> {
-        let config = Config::new()?;
+        let config = Arc::new(Config::new()?);
 
-        let (minecraft_sender, mut discord_reciever) = mpsc::channel(100); // Minecraft -> Discord
+        let (minecraft_sender, discord_reciever) = mpsc::channel(100); // Minecraft -> Discord
         let (discord_sender, minecraft_reciever) = mpsc::channel(100); // Discord -> Minecraft
 
-        let tmp_sender = discord_sender.clone();
-        tokio::spawn(async move {
-            while let Some(msg) = discord_reciever.recv().await {
-                tmp_sender
-                    .send(msg)
-                    .await
-                    .expect("Failed to send discord message to minecraft")
-            }
-        });
-
         Ok(Self {
-            _config: config,
-            minecraft: minecraft::Minecraft::new((minecraft_sender, minecraft_reciever)).await,
+            minecraft: Minecraft::new((minecraft_sender, minecraft_reciever), config.clone()).await,
+            discord: Discord::new((discord_sender, discord_reciever), config).await?,
         })
     }
 
@@ -62,7 +55,7 @@ impl Bridge {
 
         {
             tokio::spawn(async move {
-                if let Err(e) = Ok(()) {
+                if let Err(e) = self.discord.start().await {
                     rx.send(e).expect("Failed to report discord error")
                 }
             });

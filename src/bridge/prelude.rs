@@ -1,17 +1,28 @@
 pub use anyhow::{anyhow, Error, Result};
 pub use colored::Colorize;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(Debug)]
-pub struct Message {
+pub struct BridgeMessage {
     pub author: String,
     pub content: String,
+    pub chat: Chat,
 }
 
-impl Message {
-    pub fn new(author: impl Into<String>, content: impl Into<String>) -> Self {
+impl BridgeMessage {
+    pub fn new(author: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
         Self {
             author: author.into(),
             content: content.into(),
+            chat,
         }
     }
+}
+
+pub type BridgeChannel = (Sender<BridgeMessage>, Receiver<BridgeMessage>);
+
+#[derive(Debug)]
+pub enum Chat {
+    Guild,
+    Officer,
 }
