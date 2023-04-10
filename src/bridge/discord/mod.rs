@@ -1,11 +1,10 @@
 mod prelude;
 
-use std::sync::Arc;
-
 use super::config::Config;
+use flume::{Receiver, Sender};
 use prelude::*;
 use serenity::{async_trait, model::prelude::*};
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 
 pub struct Discord {
     client: Client,
@@ -20,7 +19,7 @@ impl Discord {
             .event_handler(Handler {
                 config: config.clone(),
                 sender: tx,
-                reciever: Arc::new(Mutex::new(rx)),
+                reciever: rx,
             })
             .await?;
 
@@ -38,7 +37,7 @@ impl Discord {
 struct Handler {
     config: Arc<Config>,
     sender: Sender<BridgeMessage>,
-    reciever: Arc<Mutex<Receiver<BridgeMessage>>>, // FIXME: EventHandler trait means you cant borrow self as mut, this is v hacky
+    reciever: Receiver<BridgeMessage>,
 }
 
 #[async_trait]
@@ -54,11 +53,14 @@ impl EventHandler for Handler {
             _ => return,
         };
 
-        self.sender.send(BridgeMessage::new(
-            msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
-            msg.content,
-            chat,
-        )).await.expect("Failed to send discord message to minecraft");
+        self.sender
+            .send_async(BridgeMessage::new(
+                msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
+                msg.content,
+                chat,
+            ))
+            .await
+            .expect("Failed to send discord message to minecraft");
     }
 
     async fn ready(&self, ctx: Context, _client: Ready) {
@@ -71,7 +73,7 @@ impl EventHandler for Handler {
                 .expect("Officer channel not found"),
         );
 
-        while let Some(msg) = self.reciever.lock().await.recv().await {
+        while let Ok(msg) = self.reciever.recv_async().await {
             let chat = match msg.chat {
                 Chat::Guild => &guild,
                 Chat::Officer => &officer,

@@ -1,15 +1,14 @@
-mod plugin;
 mod prelude;
 
 use super::config::Config;
 use azalea::{
     protocol::packets::game::ClientboundGamePacket::Disconnect, ClientInformation, JoinError,
 };
-use parking_lot::Mutex;
+use flume::{Receiver, Sender};
 use prelude::*;
 use std::sync::Arc;
 use tokio::{
-    sync::mpsc::{Receiver, Sender, UnboundedReceiver},
+    sync::mpsc::UnboundedReceiver,
     time::{sleep, Duration},
 };
 
@@ -21,7 +20,7 @@ const HOST: &str = "mc.hypixel.io";
 pub struct Minecraft {
     pub account: Account,
     sender: Sender<BridgeMessage>,
-    reciever: Arc<Mutex<Receiver<BridgeMessage>>>,
+    reciever: Receiver<BridgeMessage>,
     _config: Arc<Config>,
 }
 
@@ -37,7 +36,7 @@ impl Minecraft {
         Self {
             account,
             sender: tx,
-            reciever: Arc::new(Mutex::new(rx)),
+            reciever: rx,
             _config: config,
         }
     }
@@ -52,11 +51,9 @@ impl Minecraft {
 
                     {
                         let rx = self.reciever.clone();
-                        std::thread::spawn(move || {
-                            let mut rx = rx.lock();
-
-                            while let Some(msg) = rx.blocking_recv() {
-                                client.chat(&format!("{}: {}", msg.author, msg.content))
+                        tokio::spawn(async move {
+                            while let Ok(msg) = rx.recv_async().await {
+                                client.chat(&format!("[{:?}] {}: {}", msg.chat, msg.author, msg.content))
                             }
                         });
                     }
@@ -65,12 +62,19 @@ impl Minecraft {
                         match event {
                             Event::Login => delay = Duration::from_secs(5),
                             Event::Chat(msg) => {
-                                let msg = msg.content().to_string();
-
-                                // TODO: Message parsing!
-                                if msg.starts_with("Guild > ") {
+                                if let Some((author, content, chat)) =
+                                    match msg.content().to_string() {
+                                        msg if msg.starts_with("Guild > ") => {
+                                            Some(("Author", "GUILDMSG", Chat::Guild))
+                                        }
+                                        msg if msg.starts_with("Officer > ") => {
+                                            Some(("Author", "GUILDMSG", Chat::Officer))
+                                        }
+                                        _ => None,
+                                    }
+                                {
                                     self.sender
-                                        .send(BridgeMessage::new("neyoa", msg, Chat::Guild))
+                                        .send_async(BridgeMessage::new(author, content, chat))
                                         .await
                                         .expect("Failed to send minecraft message to discord");
                                 }

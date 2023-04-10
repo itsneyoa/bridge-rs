@@ -1,6 +1,6 @@
 pub use anyhow::{anyhow, Error, Result};
 pub use colored::Colorize;
-use tokio::sync::mpsc::{Receiver, Sender};
+use flume::{Receiver, Sender};
 
 #[derive(Debug)]
 pub struct BridgeMessage {

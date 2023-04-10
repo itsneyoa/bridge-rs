@@ -8,7 +8,6 @@ use discord::Discord;
 use minecraft::Minecraft;
 use prelude::*;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 pub struct Bridge {
     minecraft: Minecraft,
@@ -32,8 +31,8 @@ impl Bridge {
     async fn new() -> Result<Self> {
         let config = Arc::new(Config::new()?);
 
-        let (minecraft_sender, discord_reciever) = mpsc::channel(100); // Minecraft -> Discord
-        let (discord_sender, minecraft_reciever) = mpsc::channel(100); // Discord -> Minecraft
+        let (minecraft_sender, discord_reciever) = flume::unbounded(); // Minecraft -> Discord
+        let (discord_sender, minecraft_reciever) = flume::unbounded(); // Discord -> Minecraft
 
         Ok(Self {
             minecraft: Minecraft::new((minecraft_sender, minecraft_reciever), config.clone()).await,
@@ -42,13 +41,13 @@ impl Bridge {
     }
 
     pub async fn start(self) -> Result<()> {
-        let (rx, mut cx) = mpsc::unbounded_channel();
+        let (rx, cx) = flume::unbounded();
 
         {
             let rx = rx.clone();
             tokio::spawn(async move {
                 if let Err(e) = self.minecraft.start().await {
-                    rx.send(e).expect("Failed to report minecraft error");
+                    rx.send_async(e).await.expect("Failed to report minecraft error");
                 }
             });
         }
@@ -56,11 +55,11 @@ impl Bridge {
         {
             tokio::spawn(async move {
                 if let Err(e) = self.discord.start().await {
-                    rx.send(e).expect("Failed to report discord error")
+                    rx.send_async(e).await.expect("Failed to report discord error");
                 }
             });
         }
 
-        cx.recv().await.map_or(Ok(()), Err)
+        cx.recv_async().await.map_or(Ok(()), Err)
     }
 }
