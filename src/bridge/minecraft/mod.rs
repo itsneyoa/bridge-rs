@@ -1,10 +1,10 @@
+mod chat;
 mod prelude;
 
 use super::config::Config;
 use azalea::{
     protocol::packets::game::ClientboundGamePacket::Disconnect, ClientInformation, JoinError,
 };
-use flume::{Receiver, Sender};
 use prelude::*;
 use std::sync::Arc;
 use tokio::{
@@ -19,8 +19,8 @@ const HOST: &str = "mc.hypixel.io";
 
 pub struct Minecraft {
     pub account: Account,
-    sender: Sender<BridgeMessage>,
-    reciever: Receiver<BridgeMessage>,
+    sender: BridgeSender,
+    reciever: BridgeReciever,
     _config: Arc<Config>,
 }
 
@@ -53,7 +53,10 @@ impl Minecraft {
                         let rx = self.reciever.clone();
                         tokio::spawn(async move {
                             while let Ok(msg) = rx.recv_async().await {
-                                client.chat(&format!("[{:?}] {}: {}", msg.chat, msg.author, msg.content))
+                                client.chat(&format!(
+                                    "[{:?}] {}: {}",
+                                    msg.chat, msg.author, msg.content
+                                ))
                             }
                         });
                     }
@@ -61,22 +64,9 @@ impl Minecraft {
                     while let Some(event) = rx.recv().await {
                         match event {
                             Event::Login => delay = Duration::from_secs(5),
-                            Event::Chat(msg) => {
-                                if let Some((author, content, chat)) =
-                                    match msg.content().to_string() {
-                                        msg if msg.starts_with("Guild > ") => {
-                                            Some(("Author", "GUILDMSG", Chat::Guild))
-                                        }
-                                        msg if msg.starts_with("Officer > ") => {
-                                            Some(("Author", "GUILDMSG", Chat::Officer))
-                                        }
-                                        _ => None,
-                                    }
-                                {
-                                    self.sender
-                                        .send_async(BridgeMessage::new(author, content, chat))
-                                        .await
-                                        .expect("Failed to send minecraft message to discord");
+                            Event::Chat(packet) => {
+                                if let Some(msg) = chat::handle(packet) {
+                                    self.sender.send_async(msg).await.unwrap()
                                 }
                             }
                             Event::Packet(packet) => {

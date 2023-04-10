@@ -727,6 +727,8 @@ dependencies = [
  "colored",
  "dotenv",
  "flume",
+ "lazy_static",
+ "regex",
  "serenity",
  "tokio",
 ]

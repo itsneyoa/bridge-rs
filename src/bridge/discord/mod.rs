@@ -1,7 +1,6 @@
 mod prelude;
 
 use super::config::Config;
-use flume::{Receiver, Sender};
 use prelude::*;
 use serenity::{async_trait, model::prelude::*};
 use std::sync::Arc;
@@ -36,8 +35,8 @@ impl Discord {
 
 struct Handler {
     config: Arc<Config>,
-    sender: Sender<BridgeMessage>,
-    reciever: Receiver<BridgeMessage>,
+    sender: BridgeSender,
+    reciever: BridgeReciever,
 }
 
 #[async_trait]

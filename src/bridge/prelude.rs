@@ -19,7 +19,9 @@ impl BridgeMessage {
     }
 }
 
-pub type BridgeChannel = (Sender<BridgeMessage>, Receiver<BridgeMessage>);
+pub type BridgeChannel = (BridgeSender, BridgeReciever);
+pub type BridgeSender = Sender<BridgeMessage>;
+pub type BridgeReciever = Receiver<BridgeMessage>;
 
 #[derive(Debug)]
 pub enum Chat {
