@@ -53,10 +53,12 @@ impl Minecraft {
                         let rx = self.reciever.clone();
                         tokio::spawn(async move {
                             while let Ok(msg) = rx.recv_async().await {
-                                client.chat(&format!(
-                                    "[{:?}] {}: {}",
-                                    msg.chat, msg.author, msg.content
-                                ))
+                                let prefix = match msg.chat {
+                                    Chat::Guild => "gc",
+                                    Chat::Officer => "oc",
+                                };
+
+                                client.chat(&format!("/{prefix} {}: {}", msg.author, msg.content))
                             }
                         });
                     }

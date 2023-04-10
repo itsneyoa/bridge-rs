@@ -4,6 +4,7 @@ use super::config::Config;
 use prelude::*;
 use serenity::{async_trait, model::prelude::*};
 use std::sync::Arc;
+use url::Url;
 
 pub struct Discord {
     client: Client,
@@ -62,14 +63,14 @@ impl EventHandler for Handler {
             .expect("Failed to send discord message to minecraft");
     }
 
-    async fn ready(&self, ctx: Context, _client: Ready) {
+    async fn ready(&self, ctx: Context, client: Ready) {
         let (guild, officer) = (
-            self.resolve_channel(&ctx, self.config.channels.guild)
+            self.resolve_channel(&ctx, &client, self.config.channels.guild)
                 .await
-                .expect("Guild channel not found"),
-            self.resolve_channel(&ctx, self.config.channels.officer)
+                .expect("Guild webhook not found"),
+            self.resolve_channel(&ctx, &client, self.config.channels.officer)
                 .await
-                .expect("Officer channel not found"),
+                .expect("Officer webhook not found"),
         );
 
         while let Ok(msg) = self.reciever.recv_async().await {
@@ -78,20 +79,47 @@ impl EventHandler for Handler {
                 Chat::Officer => &officer,
             };
 
-            chat.say(&ctx.http, format!("{}: {}", msg.author, msg.content))
-                .await
-                .unwrap();
+            let _ = chat // Currently we don't care if this fails - maybe add retrying?
+                .execute(&ctx.http, false, |builder| {
+                    builder
+                        .content(msg.content)
+                        .username(&msg.author)
+                        .avatar_url(format!("https://mc-heads.net/avatar/{}/512", msg.author))
+                })
+                .await;
         }
     }
 }
 
 impl Handler {
-    async fn resolve_channel(&self, ctx: &Context, id: u64) -> Result<GuildChannel> {
-        match ctx.http.get_channel(id).await? {
+    async fn resolve_channel(&self, ctx: &Context, client: &Ready, id: u64) -> Result<Webhook> {
+        let channel = match ctx.http.get_channel(id).await? {
             Channel::Guild(channel) => Ok(channel),
             wrong_channel => Err(anyhow!(
                 "Channel {wrong_channel:?} is not of type GuildChannel"
             )),
-        }
+        }?;
+
+        let hook = channel.webhooks(&ctx.http).await?.into_iter().find(|x| {
+            x.user
+                .as_ref()
+                .is_some_and(|user| user.id == client.user.id)
+        });
+
+        Ok(match hook {
+            Some(hook) => hook,
+            None => match client.user.avatar_url() {
+                Some(url) => {
+                    channel
+                        .create_webhook_with_avatar(
+                            &ctx.http,
+                            "Bridge",
+                            AttachmentType::Image(Url::parse(&url).unwrap()),
+                        )
+                        .await
+                }
+                None => channel.create_webhook(&ctx.http, "Bridge").await,
+            }?,
+        })
     }
 }
