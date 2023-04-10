@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.70"
+azalea = { git = "https://github.com/mat-1/azalea" }
+colored = "2.0.0"
+dotenv = "0.15.0"
+parking_lot = "0.12.1"
+tokio = "1.27.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
