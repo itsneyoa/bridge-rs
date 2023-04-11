@@ -1,3 +1,5 @@
+//! The Discord half of the Bridge
+
 use super::{config::Config, BridgeEvent, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
@@ -5,16 +7,29 @@ use serenity::{async_trait, builder::CreateEmbed, model::prelude::*, prelude::*,
 use std::sync::Arc;
 use url::Url;
 
+/// Embed colour to indicate a successful operation
 const GREEN: Colour = Colour::from_rgb(71, 240, 74);
-const _AMBER: Colour = Colour::from_rgb(255, 140, 0);
+/// Embed colour to indicate a pending or ambigous operation
+#[allow(unused)]
+const AMBER: Colour = Colour::from_rgb(255, 140, 0);
+/// Embed colour to indicate a failed operation
 const RED: Colour = Colour::from_rgb(240, 74, 71);
 
+/// The Discord structure
 pub struct Discord {
+    /// The Discord client
+    ///
+    /// Used to send messages, recieve messages, create and modify webhooks, etc.
     client: Client,
-    _config: Arc<Config>,
+    /// See [`crate::bridge::config`]
+    #[allow(unused)]
+    config: Arc<Config>,
 }
 
 impl Discord {
+    /// Create a new instance of [`Discord`]
+    ///
+    /// **This does not start running anything - use [`Self::start`]**
     pub async fn new(
         (tx, rx): (Sender<ToMinecraft>, Receiver<ToDiscord>),
         config: Arc<Config>,
@@ -29,20 +44,22 @@ impl Discord {
             })
             .await?;
 
-        Ok(Self {
-            client,
-            _config: config,
-        })
+        Ok(Self { client, config })
     }
 
+    /// Log in to the Discord API and start listening and sending to Minecraft over the bridge
     pub async fn start(mut self) -> Result<()> {
         Ok(self.client.start().await?)
     }
 }
 
+/// The handler for all Discord events
 struct Handler {
+    /// See [`Discord::config`]
     config: Arc<Config>,
+    /// The channel used to send payloads to Minecraft
     sender: Sender<ToMinecraft>,
+    /// The channel used to recieve payloads from Minecraft
     reciever: Receiver<ToDiscord>,
 }
 
@@ -155,6 +172,7 @@ impl EventHandler for Handler {
 }
 
 impl Handler {
+    /// Find a Discord channel with a given ID
     async fn resolve_channel(&self, ctx: &Context, id: u64) -> Result<GuildChannel> {
         match ctx.http.get_channel(id).await? {
             Channel::Guild(channel) => Ok(channel),
@@ -164,6 +182,7 @@ impl Handler {
         }
     }
 
+    /// Find a Discord webhook in the given channel that is owned by the client bot user
     async fn resolve_webhook(
         &self,
         channel: &GuildChannel,
@@ -194,8 +213,15 @@ impl Handler {
     }
 }
 
+/// The state the Minecraft bot is currently in
 #[derive(Debug)]
 enum State {
+    /// The bot is Online
+    ///
+    /// The next status message that should be sent is for [`Self::Offline`]
     Online,
+    /// The bot is Offline
+    ///
+    /// The next status message that should be sent is for [`Self::Online`]
     Offline,
 }

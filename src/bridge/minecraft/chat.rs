@@ -1,6 +1,9 @@
+//! A set of helpers for handling chat messages
+
 use crate::bridge::{Chat, ToDiscord};
 use azalea::chat::ChatPacket;
 
+/// Contains all the Regular Expressions used to decide what to do with incoming chat messages
 mod regex {
     use lazy_static::lazy_static;
     use regex::Regex;
@@ -14,6 +17,9 @@ mod regex {
     }
 }
 
+/// Handle an incoming chat message
+///
+/// If the message is of interest (i.e. contained in [`regex`]) return the payload to send to Discord
 pub fn handle(packet: ChatPacket) -> Option<ToDiscord> {
     let message = packet.content();
 
@@ -32,6 +38,7 @@ pub fn handle(packet: ChatPacket) -> Option<ToDiscord> {
     None
 }
 
+/// Handles the message if it is a guild message
 fn handle_guild_message(message: &str) -> Option<ToDiscord> {
     if let Some(captures) = regex::GUILD_MESSAGE.captures_iter(message).next() {
         let mut iter = captures.iter().skip(1);
@@ -47,6 +54,7 @@ fn handle_guild_message(message: &str) -> Option<ToDiscord> {
     None
 }
 
+/// Handles the message if it is an officer message
 fn handle_officer_message(message: &str) -> Option<ToDiscord> {
     if let Some(captures) = regex::OFFICER_MESSAGE.captures_iter(message).next() {
         let mut iter = captures.iter().skip(1);

@@ -1,3 +1,5 @@
+//! The Minecraft half of the bridge
+
 mod chat;
 
 use super::{config::Config, Chat, ToDiscord, ToMinecraft};
@@ -11,19 +13,31 @@ use tokio::{
     time::{sleep, Duration},
 };
 
+/// The server that should be joined by the bot
 #[cfg(debug_assertions)]
 const HOST: &str = "localhost";
 #[cfg(not(debug_assertions))]
 const HOST: &str = "mc.hypixel.io";
 
+/// The Minecraft structure
 pub struct Minecraft {
+    /// The account to log in with
+    /// - Development: An offline account which can only log in to offline server
+    /// - Production: A live Microsoft account
     pub account: Account,
+    /// The channel used to send payloads to Discord
     sender: Sender<ToDiscord>,
+    /// The channel used to recieve payloads from Discord
     reciever: Receiver<ToMinecraft>,
-    _config: Arc<Config>,
+    /// See [`crate::bridge::config`]
+    #[allow(unused)]
+    config: Arc<Config>,
 }
 
 impl Minecraft {
+    /// Create a new instance of [`Minecraft`]
+    ///
+    /// **This does not start running anything - use [`Self::start`]**
     pub async fn new(
         (tx, rx): (Sender<ToDiscord>, Receiver<ToMinecraft>),
         config: Arc<Config>,
@@ -39,10 +53,11 @@ impl Minecraft {
             account,
             sender: tx,
             reciever: rx,
-            _config: config,
+            config,
         }
     }
 
+    /// Connect to the [`HOST`] server and start listening and sending to Discord over the bridge
     pub async fn start(self) -> Result<()> {
         let mut delay = Duration::from_secs(5);
 
@@ -76,6 +91,7 @@ impl Minecraft {
         }
     }
 
+    /// Create a Minecraft client, and set the render distance to the minimum (2)
     async fn create_client(&self) -> Result<(Client, UnboundedReceiver<Event>), JoinError> {
         let (client, rx) = Client::join(&self.account, HOST).await?;
 
@@ -89,6 +105,7 @@ impl Minecraft {
         Ok((client, rx))
     }
 
+    /// Handle all incoming messages from Discord on the bridge
     async fn handle_incoming_messages(
         &self,
         rx: Receiver<ToMinecraft>,
@@ -112,6 +129,7 @@ impl Minecraft {
         Ok(())
     }
 
+    /// Handle all incoming events from the Minecraft client
     async fn handle_incoming_events(
         &self,
         mut rx: UnboundedReceiver<Event>,

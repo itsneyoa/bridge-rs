@@ -1,3 +1,9 @@
+//! The Bridge between Hypixel and Discord
+//!
+//! Uses channels so the individual halves can communicate:
+//! - [`Minecraft`](minecraft::Minecraft)
+//! - [`Discord`](discord::Discord)
+
 mod config;
 mod discord;
 mod minecraft;
@@ -11,11 +17,15 @@ use minecraft::Minecraft;
 use std::sync::Arc;
 pub use types::*;
 
+/// The Bridge structure
 pub struct Bridge {
+    /// The (`Minecraft`)[minecraft::Minecraft] half of the bridge
     minecraft: Minecraft,
+    /// The (`Discord`)[discord::Discord] half of the bridge
     discord: Discord,
 }
 
+/// Create and start the bridge
 pub async fn create_bridge() -> Result<()> {
     let bridge = Bridge::new()
         .await
@@ -30,6 +40,7 @@ pub async fn create_bridge() -> Result<()> {
 }
 
 impl Bridge {
+    /// Create a new Bridge instance, setting up the [`Config`](Config) and channels
     async fn new() -> Result<Self> {
         let config = Arc::new(Config::new()?);
 
@@ -42,6 +53,7 @@ impl Bridge {
         })
     }
 
+    /// Start both halves of the Bridge
     pub async fn start(self) -> Result<()> {
         tokio::try_join!(self.minecraft.start(), self.discord.start())?;
 

@@ -1,3 +1,8 @@
+//! An Azalea + Serenity bot to synchronize Guild and Officer chats on the Hypixel network between Minecraft and Discord
+
+#![deny(missing_docs, clippy::missing_docs_in_private_items)]
+#![warn(clippy::doc_markdown, clippy::tabs_in_doc_comments)]
+
 mod bridge;
 mod prelude;
 
