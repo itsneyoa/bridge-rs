@@ -4,7 +4,6 @@ use super::{config::Config, BridgeEvent, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
 use serenity::{async_trait, builder::CreateEmbed, model::prelude::*, prelude::*, utils::Colour};
-use std::sync::Arc;
 use url::Url;
 
 /// Embed colour to indicate a successful operation
@@ -16,39 +15,36 @@ const AMBER: Colour = Colour::from_rgb(255, 140, 0);
 const RED: Colour = Colour::from_rgb(240, 74, 71);
 
 /// The Discord structure
-pub struct Discord {
+pub(super) struct Discord {
     /// The Discord client
     ///
     /// Used to send messages, recieve messages, create and modify webhooks, etc.
     client: Client,
-    /// See [`crate::bridge::config`]
-    #[allow(unused)]
-    config: Arc<Config>,
 }
 
 impl Discord {
     /// Create a new instance of [`Discord`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub async fn new(
+    pub(super) async fn new(
         (tx, rx): (Sender<ToMinecraft>, Receiver<ToDiscord>),
-        config: Arc<Config>,
+        config: Config,
     ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
         let client = Client::builder(&config.token, intents)
             .event_handler(Handler {
-                config: config.clone(),
+                config,
                 sender: tx,
                 reciever: rx,
             })
             .await?;
 
-        Ok(Self { client, config })
+        Ok(Self { client })
     }
 
     /// Log in to the Discord API and start listening and sending to Minecraft over the bridge
-    pub async fn start(mut self) -> Result<()> {
+    pub(super) async fn start(mut self) -> Result<()> {
         Ok(self.client.start().await?)
     }
 }
@@ -56,7 +52,7 @@ impl Discord {
 /// The handler for all Discord events
 struct Handler {
     /// See [`Discord::config`]
-    config: Arc<Config>,
+    config: Config,
     /// The channel used to send payloads to Minecraft
     sender: Sender<ToMinecraft>,
     /// The channel used to recieve payloads from Minecraft

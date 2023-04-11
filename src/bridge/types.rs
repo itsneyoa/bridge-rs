@@ -17,7 +17,7 @@ pub struct Message {
 
 impl Message {
     /// A utility function to make a message without using the ugly {...} syntax
-    pub(super) fn new(user: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
+    fn new(user: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
         Self {
             user: user.into(),
             content: content.into(),

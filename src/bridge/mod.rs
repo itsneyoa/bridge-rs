@@ -14,11 +14,10 @@ use colored::Colorize;
 use config::Config;
 use discord::Discord;
 use minecraft::Minecraft;
-use std::sync::Arc;
-pub use types::*;
+use types::*;
 
 /// The Bridge structure
-pub struct Bridge {
+pub(super) struct Bridge {
     /// The (`Minecraft`)[minecraft::Minecraft] half of the bridge
     minecraft: Minecraft,
     /// The (`Discord`)[discord::Discord] half of the bridge
@@ -26,7 +25,7 @@ pub struct Bridge {
 }
 
 /// Create and start the bridge
-pub async fn create_bridge() -> Result<()> {
+pub(super) async fn create_bridge() -> Result<()> {
     let bridge = Bridge::new()
         .await
         .map_err(|msg| anyhow!("{}: {}", "Bridge setup error".red(), msg))?;
@@ -42,19 +41,19 @@ pub async fn create_bridge() -> Result<()> {
 impl Bridge {
     /// Create a new Bridge instance, setting up the [`Config`](Config) and channels
     async fn new() -> Result<Self> {
-        let config = Arc::new(Config::new()?);
+        let config = Config::new()?;
 
         let (minecraft_sender, discord_reciever) = flume::unbounded::<ToDiscord>();
         let (discord_sender, minecraft_reciever) = flume::unbounded::<ToMinecraft>();
 
         Ok(Self {
-            minecraft: Minecraft::new((minecraft_sender, minecraft_reciever), config.clone()).await,
+            minecraft: Minecraft::new((minecraft_sender, minecraft_reciever)).await,
             discord: Discord::new((discord_sender, discord_reciever), config).await?,
         })
     }
 
     /// Start both halves of the Bridge
-    pub async fn start(self) -> Result<()> {
+    async fn start(self) -> Result<()> {
         tokio::try_join!(self.minecraft.start(), self.discord.start())?;
 
         Ok(())

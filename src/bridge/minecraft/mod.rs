@@ -2,12 +2,11 @@
 
 mod chat;
 
-use super::{config::Config, Chat, ToDiscord, ToMinecraft};
-use crate::{bridge::BridgeEvent, prelude::*};
-pub use azalea::prelude::*;
+use super::{BridgeEvent, Chat, ToDiscord, ToMinecraft};
+use crate::prelude::*;
+use azalea::prelude::*;
 use azalea::{ClientInformation, JoinError};
 use flume::{Receiver, Sender};
-use std::sync::Arc;
 use tokio::{
     sync::mpsc::UnboundedReceiver,
     time::{sleep, Duration},
@@ -20,28 +19,22 @@ const HOST: &str = "localhost";
 const HOST: &str = "mc.hypixel.io";
 
 /// The Minecraft structure
-pub struct Minecraft {
+pub(super) struct Minecraft {
     /// The account to log in with
     /// - Development: An offline account which can only log in to offline server
     /// - Production: A live Microsoft account
-    pub account: Account,
+    account: Account,
     /// The channel used to send payloads to Discord
     sender: Sender<ToDiscord>,
     /// The channel used to recieve payloads from Discord
     reciever: Receiver<ToMinecraft>,
-    /// See [`crate::bridge::config`]
-    #[allow(unused)]
-    config: Arc<Config>,
 }
 
 impl Minecraft {
     /// Create a new instance of [`Minecraft`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub async fn new(
-        (tx, rx): (Sender<ToDiscord>, Receiver<ToMinecraft>),
-        config: Arc<Config>,
-    ) -> Self {
+    pub(super) async fn new((tx, rx): (Sender<ToDiscord>, Receiver<ToMinecraft>)) -> Self {
         #[cfg(debug_assertions)]
         let account = Account::offline("Bridge");
         #[cfg(not(debug_assertions))]
@@ -53,12 +46,11 @@ impl Minecraft {
             account,
             sender: tx,
             reciever: rx,
-            config,
         }
     }
 
     /// Connect to the [`HOST`] server and start listening and sending to Discord over the bridge
-    pub async fn start(self) -> Result<()> {
+    pub(super) async fn start(self) -> Result<()> {
         let mut delay = Duration::from_secs(5);
 
         loop {
