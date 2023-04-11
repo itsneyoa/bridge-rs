@@ -8,7 +8,7 @@ pub struct Message {
 #[derive(Debug)]
 pub enum ToDiscord {
     Message(Message),
-    Event(String),
+    Event(BridgeEvent),
 }
 
 impl ToDiscord {
@@ -19,16 +19,18 @@ impl ToDiscord {
             chat,
         })
     }
+}
 
-    pub fn event(description: impl Into<String>) -> Self {
-        Self::Event(description.into())
-    }
+#[derive(Debug)]
+pub enum BridgeEvent {
+    Start(String),
+    End(String),
 }
 
 #[derive(Debug)]
 pub enum ToMinecraft {
     Message(Message),
-    Command(String),
+    Command(String), // Will be for discord commands such as /mute
 }
 
 impl ToMinecraft {
@@ -40,7 +42,7 @@ impl ToMinecraft {
         })
     }
 
-    pub fn command(description: impl Into<String>) -> Self {
+    pub fn _command(description: impl Into<String>) -> Self {
         Self::Command(description.into())
     }
 }

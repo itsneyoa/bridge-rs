@@ -1,11 +1,9 @@
 mod chat;
 
 use super::{config::Config, Chat, ToDiscord, ToMinecraft};
-use crate::prelude::*;
+use crate::{bridge::BridgeEvent, prelude::*};
 pub use azalea::prelude::*;
-use azalea::{
-    protocol::packets::game::ClientboundGamePacket::Disconnect, ClientInformation, JoinError,
-};
+use azalea::{ClientInformation, JoinError};
 use flume::{Receiver, Sender};
 use std::sync::Arc;
 use tokio::{
@@ -50,54 +48,19 @@ impl Minecraft {
 
         loop {
             let reason: String = match self.create_client().await {
-                Ok((client, mut rx)) => {
+                Ok((client, rx)) => {
                     let mut reason: Option<String> = None;
 
-                    {
-                        let rx = self.reciever.clone();
-                        tokio::spawn(async move {
-                            while let Ok(payload) = rx.recv_async().await {
-                                use ToMinecraft::*;
-                                match payload {
-                                    Message(msg) => {
-                                        let prefix = match msg.chat {
-                                            Chat::Guild => "gc",
-                                            Chat::Officer => "oc",
-                                        };
-
-                                        client.chat(&format!(
-                                            "/{prefix} {}: {}",
-                                            msg.user, msg.content
-                                        ))
-                                    }
-                                    Command(cmd) => client.chat(&cmd),
-                                }
-                            }
-                        });
-                    }
-
-                    while let Some(event) = rx.recv().await {
-                        match event {
-                            Event::Login => delay = Duration::from_secs(5),
-                            Event::Chat(packet) => {
-                                if let Some(msg) = chat::handle(packet) {
-                                    self.sender.send_async(msg).await.unwrap()
-                                }
-                            }
-                            Event::Packet(packet) => {
-                                if let Disconnect(packet) = packet.as_ref() {
-                                    reason = Some(packet.reason.to_string());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                    tokio::try_join!(
+                        self.handle_incoming_messages(self.reciever.clone(), &client),
+                        self.handle_incoming_events(rx, &client, &mut delay, &mut reason)
+                    )?;
 
                     reason.unwrap_or("Unknown".into())
                 }
                 Err(err) => {
                     if let JoinError::Disconnect { reason } = err {
-                        format!("Disconnected while joining: {reason}")
+                        reason.to_string()
                     } else {
                         return Err(err.into());
                     }
@@ -105,6 +68,9 @@ impl Minecraft {
             };
 
             println!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
+            self.sender
+                .send_async(ToDiscord::Event(BridgeEvent::End(reason)))
+                .await?;
             sleep(delay).await;
             delay += Duration::from_secs(5);
         }
@@ -122,22 +88,65 @@ impl Minecraft {
 
         Ok((client, rx))
     }
+
+    async fn handle_incoming_messages(
+        &self,
+        rx: Receiver<ToMinecraft>,
+        client: &Client,
+    ) -> Result<()> {
+        while let Ok(payload) = rx.recv_async().await {
+            use ToMinecraft::*;
+            match payload {
+                Message(msg) => {
+                    let prefix = match msg.chat {
+                        Chat::Guild => "gc",
+                        Chat::Officer => "oc",
+                    };
+
+                    client.chat(&format!("/{prefix} {}: {}", msg.user, msg.content))
+                }
+                Command(cmd) => client.chat(&cmd),
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_incoming_events(
+        &self,
+        mut rx: UnboundedReceiver<Event>,
+        client: &Client,
+        delay: &mut Duration,
+        reason: &mut Option<String>,
+    ) -> Result<()> {
+        while let Some(event) = rx.recv().await {
+            use Event::*;
+            match event {
+                Login => {
+                    *delay = Duration::from_secs(5);
+                    self.sender
+                        .send_async(ToDiscord::Event(BridgeEvent::Start(
+                            client.profile.name.clone(),
+                        )))
+                        .await?;
+                }
+                Chat(packet) => {
+                    if let Some(msg) = chat::handle(packet) {
+                        self.sender.send_async(msg).await?
+                    }
+                }
+                Packet(packet) => {
+                    use azalea::protocol::packets::game::ClientboundGamePacket::*;
+                    match packet.as_ref() {
+                        Disconnect(packet) => *reason = Some(packet.reason.to_string()),
+                        Respawn(_packet) => {} // Triggered when joining a new world too!
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
 }
-
-#[derive(Default, Clone, Component, Debug)]
-pub struct State;
-
-// async fn handle(bot: Client, event: Event, state: State) -> Result<()> {
-//     // match event {
-//     //     Event::Chat(m) => {
-//     //         println!("{}", m.message().to_ansi());
-//     //     }
-//     //     Event::Login => {
-//     //         bot.chat("Hello");
-//     //         println!("{state:?}");
-//     //     }
-//     //     _ => {}
-//     // }
-
-//     Ok(())
-// }

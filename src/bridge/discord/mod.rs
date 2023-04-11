@@ -1,9 +1,13 @@
-use super::{config::Config, Chat, ToDiscord, ToMinecraft};
+use super::{config::Config, BridgeEvent, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
-use serenity::{async_trait, model::prelude::*, prelude::*};
+use serenity::{async_trait, builder::CreateEmbed, model::prelude::*, prelude::*, utils::Colour};
 use std::sync::Arc;
 use url::Url;
+
+const GREEN: Colour = Colour::from_rgb(71, 240, 74);
+const _AMBER: Colour = Colour::from_rgb(255, 140, 0);
+const RED: Colour = Colour::from_rgb(240, 74, 71);
 
 pub struct Discord {
     client: Client,
@@ -66,48 +70,106 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, client: Ready) {
-        let (guild, officer) = (
-            self.resolve_channel(&ctx, &client, self.config.channels.guild)
+        let (guild_channel, officer_channel) = (
+            self.resolve_channel(&ctx, self.config.channels.guild)
                 .await
-                .expect("Guild webhook not found"),
-            self.resolve_channel(&ctx, &client, self.config.channels.officer)
+                .expect("Guild channel not found"),
+            self.resolve_channel(&ctx, self.config.channels.officer)
                 .await
-                .expect("Officer webhook not found"),
+                .expect("Officer channel not found"),
         );
+
+        let (guild_webhook, officer_webhook) = (
+            self.resolve_webhook(&guild_channel, &ctx, &client)
+                .await
+                .expect("Guild webhook could not be found or created"),
+            self.resolve_webhook(&officer_channel, &ctx, &client)
+                .await
+                .expect("Officer webhook could not be found or created"),
+        );
+
+        let mut state = State::Offline;
 
         while let Ok(payload) = self.reciever.recv_async().await {
             use ToDiscord::*;
             match payload {
                 Message(msg) => {
-                    let chat = match msg.chat {
-                        Chat::Guild => &guild,
-                        Chat::Officer => &officer,
+                    let webhook = match msg.chat {
+                        Chat::Guild => &guild_webhook,
+                        Chat::Officer => &officer_webhook,
                     };
 
-                    let _ = chat // Currently we don't care if this fails - maybe add retrying?
-                        .execute(&ctx.http, false, |builder| {
-                            builder
-                                .content(msg.content)
+                    let _ = webhook // Currently we don't care if this fails - maybe add retrying?
+                        .execute(&ctx.http, false, |f| {
+                            f.content(msg.content)
                                 .username(&msg.user)
                                 .avatar_url(format!("https://mc-heads.net/avatar/{}/512", msg.user))
+                                .allowed_mentions(|f| f.empty_parse())
                         })
                         .await;
                 }
-                Event(event) => todo!(),
+                Event(event) => {
+                    use BridgeEvent::*;
+                    match event {
+                        Start(username) => {
+                            let mut embed = CreateEmbed::default();
+                            let embed = embed
+                                .author(|f| f.name("Minecraft Bot is Connected"))
+                                .description(format!("Logged in as `{username}`"))
+                                .colour(GREEN);
+
+                            let _ = tokio::join!(
+                                guild_channel
+                                    .send_message(&ctx.http, |f| f.set_embed(embed.to_owned())),
+                                officer_channel
+                                    .send_message(&ctx.http, |f| f.set_embed(embed.to_owned()))
+                            );
+
+                            state = State::Online;
+                        }
+                        End(reason) => {
+                            // logs could be added here if needed
+                            if let State::Online = state {
+                                let mut embed = CreateEmbed::default();
+                                let embed = embed
+                                    .author(|f| f.name("Minecraft Bot has been Disconnected"))
+                                    .colour(RED);
+
+                                let _ = tokio::join!(
+                                    guild_channel
+                                        .send_message(&ctx.http, |f| f.set_embed(embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned())),
+                                    officer_channel
+                                        .send_message(&ctx.http, |f| f.set_embed(embed.clone().description(
+                                            format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")
+                                        ).to_owned())),
+                                );
+                            }
+
+                            state = State::Offline;
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 impl Handler {
-    async fn resolve_channel(&self, ctx: &Context, client: &Ready, id: u64) -> Result<Webhook> {
-        let channel = match ctx.http.get_channel(id).await? {
+    async fn resolve_channel(&self, ctx: &Context, id: u64) -> Result<GuildChannel> {
+        match ctx.http.get_channel(id).await? {
             Channel::Guild(channel) => Ok(channel),
             wrong_channel => Err(anyhow!(
                 "Channel {wrong_channel:?} is not of type GuildChannel"
             )),
-        }?;
+        }
+    }
 
+    async fn resolve_webhook(
+        &self,
+        channel: &GuildChannel,
+        ctx: &Context,
+        client: &Ready,
+    ) -> Result<Webhook> {
         let hook = channel.webhooks(&ctx.http).await?.into_iter().find(|x| {
             x.user
                 .as_ref()
@@ -130,4 +192,10 @@ impl Handler {
             }?,
         })
     }
+}
+
+#[derive(Debug)]
+enum State {
+    Online,
+    Offline,
 }

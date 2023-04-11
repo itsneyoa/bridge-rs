@@ -43,29 +43,8 @@ impl Bridge {
     }
 
     pub async fn start(self) -> Result<()> {
-        let (rx, cx) = flume::unbounded();
+        tokio::try_join!(self.minecraft.start(), self.discord.start())?;
 
-        {
-            let rx = rx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = self.minecraft.start().await {
-                    rx.send_async(e)
-                        .await
-                        .expect("Failed to report minecraft error");
-                }
-            });
-        }
-
-        {
-            tokio::spawn(async move {
-                if let Err(e) = self.discord.start().await {
-                    rx.send_async(e)
-                        .await
-                        .expect("Failed to report discord error");
-                }
-            });
-        }
-
-        cx.recv_async().await.map_or(Ok(()), Err)
+        Ok(())
     }
 }
