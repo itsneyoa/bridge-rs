@@ -2,7 +2,7 @@
 
 mod chat;
 
-use super::{BridgeEvent, Chat, ToDiscord, ToMinecraft};
+use super::{Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use azalea::prelude::*;
 use azalea::{ClientInformation, JoinError};
@@ -75,9 +75,7 @@ impl Minecraft {
             };
 
             println!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
-            self.sender
-                .send_async(ToDiscord::Event(BridgeEvent::End(reason)))
-                .await?;
+            self.sender.send_async(ToDiscord::End(reason)).await?;
             sleep(delay).await;
             delay += Duration::from_secs(5);
         }
@@ -106,13 +104,13 @@ impl Minecraft {
         while let Ok(payload) = rx.recv_async().await {
             use ToMinecraft::*;
             match payload {
-                Message(msg) => {
-                    let prefix = match msg.chat {
+                Message(author, content, chat) => {
+                    let prefix = match chat {
                         Chat::Guild => "gc",
                         Chat::Officer => "oc",
                     };
 
-                    client.chat(&format!("/{prefix} {}: {}", msg.user, msg.content))
+                    client.chat(&format!("/{prefix} {}: {}", author, content))
                 }
                 Command(cmd) => client.chat(&cmd),
             }
@@ -135,13 +133,11 @@ impl Minecraft {
                 Login => {
                     *delay = Duration::from_secs(5);
                     self.sender
-                        .send_async(ToDiscord::Event(BridgeEvent::Start(
-                            client.profile.name.clone(),
-                        )))
+                        .send_async(ToDiscord::Start(client.profile.name.clone()))
                         .await?;
                 }
                 Chat(packet) => {
-                    if let Some(msg) = chat::handle(packet) {
+                    if let Some(msg) = chat::handle(packet.content()) {
                         self.sender.send_async(msg).await?
                     }
                 }

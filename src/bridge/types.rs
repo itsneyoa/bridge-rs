@@ -1,79 +1,50 @@
 //! Universal typings within the Bridge
 
-/// A Bidirectional Message on the Bridge.
-/// - Use from Minecraft to Discord with [`ToDiscord::Message`]
-/// - Use from Discord to Minecraft with [`ToMinecraft::Message`]
-#[derive(Debug)]
-pub struct Message {
-    /// The person who sent the message
-    /// - From Discord this is the user's nickname
-    /// - From Minecraft this is the player's IGN
-    pub user: String,
-    /// The main body of the message
-    pub content: String,
-    /// The chat the message should be sent to
-    pub chat: Chat,
-}
-
-impl Message {
-    /// A utility function to make a message without using the ugly {...} syntax
-    fn new(user: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
-        Self {
-            user: user.into(),
-            content: content.into(),
-            chat,
-        }
-    }
-}
-
 /// A Payload sent from Minecraft to Discord
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ToDiscord {
-    /// A Message - See [`Message`]
-    Message(Message),
-    /// An Event - See [`BridgeEvent`]
-    Event(BridgeEvent),
-}
-
-impl ToDiscord {
-    /// A utility function to make a message without using the ugly {...} syntax
-    pub fn message(user: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
-        Self::Message(Message::new(user, content, chat))
-    }
-}
-
-/// An Event on Minecraft
-#[derive(Debug)]
-pub enum BridgeEvent {
-    /// The Minecraft client has sucessfully connected to the server
-    ///
-    /// Contains the username of the bot
+    /// A Message containing the users IGN, message content and the destination chat
+    Message(String, String, Chat),
+    /// The Minecraft client has sucessfully connected to the server. Contains the username of the bot
     Start(String),
-    /// The Minecraft client has been disconnected from the server
-    ///
-    /// Contains the reason for the disconnect
+    /// The Minecraft client has been disconnected from the server. Contains the reason for the disconnect
     End(String),
+    /// A Guild Member logged in to Hypixel
+    Login(String),
+    /// A Guild Member logged out of Hypixel
+    Logout(String),
+    /// A Member joined the guild
+    Join(String),
+    /// A Member left the guild
+    Leave(String),
+    /// A Member was kicked from the guild
+    Kick(String, String),
+    /// A member was promoted
+    Promotion(String, String, String),
+    /// A member was demoted
+    Demotion(String, String, String),
+    /// A member was muted
+    Mute(String, String, String),
+    /// A member was unmuted
+    Unmute(String, String),
+    /// Guild chat has been muted
+    GuildMute(String, String),
+    /// Guild chat has been unmuted
+    GuildUnmute(String),
 }
 
 /// A Payload sent from Discord to Minecraft
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ToMinecraft {
-    /// A Message - See [`Message`]
-    Message(Message),
+    /// A Message containing the users nickname, message content and the destination chat
+    Message(String, String, Chat),
     /// A Command to be executed by the Minecraft client
     #[allow(unused)]
     Command(String), // Will be for discord commands such as /mute
 }
 
-impl ToMinecraft {
-    /// A utility function to make a message without using the ugly {...} syntax
-    pub fn message(user: impl Into<String>, content: impl Into<String>, chat: Chat) -> Self {
-        Self::Message(Message::new(user, content, chat))
-    }
-}
-
 /// A chat which messages can be sent from and to
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Chat {
     /// Guild chat varient
     ///

@@ -1,16 +1,18 @@
 //! The Discord half of the Bridge
 
-use super::{config::Config, BridgeEvent, Chat, ToDiscord, ToMinecraft};
+mod builders;
+
+use super::{config::Config, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
-use serenity::{async_trait, builder::CreateEmbed, model::prelude::*, prelude::*, utils::Colour};
+use serenity::{
+    async_trait, builder::CreateEmbed, http::Http, json::Value, model::prelude::*, prelude::*,
+    utils::Colour,
+};
 use url::Url;
 
 /// Embed colour to indicate a successful operation
 const GREEN: Colour = Colour::from_rgb(71, 240, 74);
-/// Embed colour to indicate a pending or ambigous operation
-#[allow(unused)]
-const AMBER: Colour = Colour::from_rgb(255, 140, 0);
 /// Embed colour to indicate a failed operation
 const RED: Colour = Colour::from_rgb(240, 74, 71);
 
@@ -73,7 +75,7 @@ impl EventHandler for Handler {
         };
 
         self.sender
-            .send_async(ToMinecraft::message(
+            .send_async(ToMinecraft::Message(
                 msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
                 msg.content,
                 chat,
@@ -106,61 +108,200 @@ impl EventHandler for Handler {
         while let Ok(payload) = self.reciever.recv_async().await {
             use ToDiscord::*;
             match payload {
-                Message(msg) => {
-                    let webhook = match msg.chat {
+                Message(author, content, chat) => {
+                    let webhook = match chat {
                         Chat::Guild => &guild_webhook,
                         Chat::Officer => &officer_webhook,
                     };
 
-                    let _ = webhook // Currently we don't care if this fails - maybe add retrying?
-                        .execute(&ctx.http, false, |f| {
-                            f.content(msg.content)
-                                .username(&msg.user)
-                                .avatar_url(format!("https://mc-heads.net/avatar/{}/512", msg.user))
-                                .allowed_mentions(|f| f.empty_parse())
-                        })
+                    let _ = self
+                        .send_webhook_text(webhook, &ctx.http, &author, &content)
                         .await;
                 }
-                Event(event) => {
-                    use BridgeEvent::*;
-                    match event {
-                        Start(username) => {
-                            let mut embed = CreateEmbed::default();
-                            let embed = embed
-                                .author(|f| f.name("Minecraft Bot is Connected"))
-                                .description(format!("Logged in as `{username}`"))
-                                .colour(GREEN);
 
-                            let _ = tokio::join!(
-                                guild_channel
-                                    .send_message(&ctx.http, |f| f.set_embed(embed.to_owned())),
-                                officer_channel
-                                    .send_message(&ctx.http, |f| f.set_embed(embed.to_owned()))
-                            );
+                Start(user) => {
+                    let mut embed = CreateEmbed::default();
+                    let embed = embed
+                        .author(|f| f.name("Minecraft Bot is Connected"))
+                        .description(format!("Logged in as `{user}`"))
+                        .colour(GREEN);
 
-                            state = State::Online;
-                        }
-                        End(reason) => {
-                            // logs could be added here if needed
-                            if let State::Online = state {
-                                let mut embed = CreateEmbed::default();
-                                let embed = embed
-                                    .author(|f| f.name("Minecraft Bot has been Disconnected"))
-                                    .colour(RED);
+                    let _ = tokio::join!(
+                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &officer_channel, embed.clone())
+                    );
 
-                                let _ = tokio::join!(
-                                    guild_channel
-                                        .send_message(&ctx.http, |f| f.set_embed(embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned())),
-                                    officer_channel
-                                        .send_message(&ctx.http, |f| f.set_embed(embed.clone().description(
-                                            format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")
-                                        ).to_owned())),
-                                );
-                            }
+                    state = State::Online;
+                }
+                End(reason) => {
+                    // logs could be added here if needed
+                    if let State::Online = state {
+                        let mut embed = CreateEmbed::default();
+                        let embed = embed
+                            .author(|f| f.name("Minecraft Bot has been Disconnected"))
+                            .colour(RED);
 
-                            state = State::Offline;
-                        }
+                        let _ = tokio::join!(
+                            self.send_channel_embed(&ctx.http, &guild_channel, embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned()),
+                            self.send_channel_embed(&ctx.http, &officer_channel, embed.clone().description(format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")).to_owned()),
+                        );
                     }
+
+                    state = State::Offline;
+                }
+                Login(user) => {
+                    let _ = self
+                        .send_webhook_embed(
+                            &guild_webhook,
+                            &ctx.http,
+                            &user,
+                            Embed::fake(|f| f.description(format!("{user} joined.")).colour(GREEN)),
+                        )
+                        .await;
+                }
+                Logout(user) => {
+                    let _ = self
+                        .send_webhook_embed(
+                            &guild_webhook,
+                            &ctx.http,
+                            &user,
+                            Embed::fake(|f| f.description(format!("{user} left.")).colour(RED)),
+                        )
+                        .await;
+                }
+                Join(user) => {
+                    let embed = builders::embed_with_head(
+                        &user,
+                        "Member Joined!",
+                        &format!("`{user}` joined the guild"),
+                        GREEN,
+                    );
+
+                    let _ = tokio::join!(
+                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                    );
+                }
+                Leave(user) => {
+                    let embed = builders::embed_with_head(
+                        &user,
+                        "Member Left!",
+                        &format!("`{user}` left the guild"),
+                        RED,
+                    );
+
+                    let _ = tokio::join!(
+                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                    );
+                }
+                Kick(user, by) => {
+                    let _ = tokio::join!(
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &guild_channel,
+                            builders::embed_with_head(
+                                &user,
+                                "Member Kicked!",
+                                &format!("`{user}` was kicked from the guild"),
+                                RED,
+                            )
+                        ),
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &officer_channel,
+                            builders::embed_with_head(
+                                &user,
+                                "Member Kicked!",
+                                &format!("`{user}` was kicked from the guild by `{by}`"),
+                                RED,
+                            )
+                        ),
+                    );
+                }
+                Promotion(user, from, to) => {
+                    let embed = builders::basic_embed(
+                        format!("`{user}` was promoted from `{from}` to `{to}`").as_str(),
+                        GREEN,
+                    );
+
+                    let _ = tokio::join!(
+                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                    );
+                }
+                Demotion(user, from, to) => {
+                    let embed = builders::basic_embed(
+                        format!("`{user}` was demoted from `{from}` to `{to}`").as_str(),
+                        RED,
+                    );
+
+                    let _ = tokio::join!(
+                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                    );
+                }
+                Mute(user, by, time) => {
+                    let _ = self
+                        .send_channel_embed(
+                            &ctx.http,
+                            &officer_channel,
+                            builders::basic_embed(
+                                format!("`{user}` has been muted for `{time}` by `{by}`").as_str(),
+                                RED,
+                            ),
+                        )
+                        .await;
+                }
+                Unmute(user, by) => {
+                    let _ = self
+                        .send_channel_embed(
+                            &ctx.http,
+                            &officer_channel,
+                            builders::basic_embed(
+                                format!("`{user}` has been unmuted by `{by}`").as_str(),
+                                GREEN,
+                            ),
+                        )
+                        .await;
+                }
+                GuildMute(by, time) => {
+                    let _ = tokio::join!(
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &guild_channel,
+                            builders::basic_embed(
+                                format!("Guild Chat has been muted for `{time}`").as_str(),
+                                RED
+                            )
+                        ),
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &officer_channel,
+                            builders::basic_embed(
+                                format!("Guild Chat has been muted for `{time}` by `{by}`")
+                                    .as_str(),
+                                RED
+                            )
+                        )
+                    );
+                }
+                GuildUnmute(by) => {
+                    let _ = tokio::join!(
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &guild_channel,
+                            builders::basic_embed("Guild Chat has been unmuted", GREEN)
+                        ),
+                        self.send_channel_embed(
+                            &ctx.http,
+                            &officer_channel,
+                            builders::basic_embed(
+                                format!("Guild Chat has been unmuted by `{by}`").as_str(),
+                                GREEN
+                            )
+                        )
+                    );
                 }
             }
         }
@@ -206,6 +347,57 @@ impl Handler {
                 None => channel.create_webhook(&ctx.http, "Bridge").await,
             }?,
         })
+    }
+
+    /// Send a webhook message copying the players name and avatar, with all mentions disabled
+    async fn send_webhook_text(
+        &self,
+        webhook: &Webhook,
+        http: &Http,
+        user: &str,
+        text: &str,
+    ) -> Result<()> {
+        webhook
+            .execute(http, false, |f| {
+                f.avatar_url(builders::head_url(user))
+                    .username(user)
+                    .allowed_mentions(|f| f.empty_parse())
+                    .content(text)
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Send a webhook embed copying the players name and avatar, with all mentions disabled
+    async fn send_webhook_embed(
+        &self,
+        webhook: &Webhook,
+        http: &Http,
+        user: &str,
+        embed: Value,
+    ) -> Result<()> {
+        webhook
+            .execute(http, false, |f| {
+                f.avatar_url(builders::head_url(user))
+                    .username(user)
+                    .allowed_mentions(|f| f.empty_parse())
+                    .embeds(vec![embed])
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Send an embed to the channel
+    async fn send_channel_embed(
+        &self,
+        http: &Http,
+        channel: &GuildChannel,
+        embed: CreateEmbed,
+    ) -> Result<()> {
+        channel.send_message(&http, |f| f.set_embed(embed)).await?;
+        Ok(())
     }
 }
 
