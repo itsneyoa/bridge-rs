@@ -18,8 +18,9 @@
     - `applications.commands`
 
 ## To do
-- [ ] Add all guild events
+- [x] Add all guild events
 - [ ] Add discord slash commands
 - [ ] Sanitise discord nicks and content
 - [ ] Online/offline messages
 - [ ] Logging
+- [ ] Clean up error handling

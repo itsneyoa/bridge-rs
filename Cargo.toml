@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.70"
 azalea = { git = "https://github.com/mat-1/azalea" }
 colored = "2.0.0"
 dotenv = "0.15.0"
@@ -20,6 +19,7 @@ serenity = { version = "0.11.5", default-features = false, features = [
     "http",
     "model",
 ] }
+thiserror = "1.0.40"
 tokio = "1.27.0"
 url = "2.3.1"
 

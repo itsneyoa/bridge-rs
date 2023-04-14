@@ -4,17 +4,22 @@
 #![warn(clippy::doc_markdown, clippy::tabs_in_doc_comments)]
 
 mod bridge;
+mod errors;
 mod prelude;
 
 use bridge::create_bridge;
+use colored::Colorize;
 use dotenv::dotenv;
+use std::process::ExitCode;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     dotenv().ok();
 
     if let Err(err) = create_bridge().await {
-        eprintln!("{err}");
-        std::process::exit(1)
+        eprintln!("{}: {}", "Error".red().bold(), err);
+        return ExitCode::FAILURE;
     }
+
+    ExitCode::SUCCESS
 }

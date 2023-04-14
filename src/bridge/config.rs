@@ -59,12 +59,12 @@ fn required<T: std::str::FromStr>(key: &str) -> Result<T> {
         if !val.is_empty() {
             return match val.parse::<T>() {
                 Ok(val) => Ok(val),
-                Err(_) => Err(anyhow!("ENV `{key}` is not set to a valid value")),
+                Err(_) => Err(BridgeError::EnvInvalid(key.to_string())),
             };
         }
     }
 
-    Err(anyhow!("ENV `{key}` should be set and not be empty"))
+    Err(BridgeError::EnvMissing(key.to_string()))
 }
 
 /// Load the specified key

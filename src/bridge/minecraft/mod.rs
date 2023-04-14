@@ -27,7 +27,7 @@ pub(super) struct Minecraft {
     /// The channel used to send payloads to Discord
     sender: Sender<ToDiscord>,
     /// The channel used to recieve payloads from Discord
-    reciever: Receiver<ToMinecraft>,
+    receiver: Receiver<ToMinecraft>,
 }
 
 impl Minecraft {
@@ -45,7 +45,7 @@ impl Minecraft {
         Self {
             account,
             sender: tx,
-            reciever: rx,
+            receiver: rx,
         }
     }
 
@@ -59,7 +59,7 @@ impl Minecraft {
                     let mut reason: Option<String> = None;
 
                     tokio::try_join!(
-                        self.handle_incoming_messages(self.reciever.clone(), &client),
+                        self.handle_incoming_messages(self.receiver.clone(), &client),
                         self.handle_incoming_events(rx, &client, &mut delay, &mut reason)
                     )?;
 
@@ -75,7 +75,7 @@ impl Minecraft {
             };
 
             println!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
-            self.sender.send_async(ToDiscord::End(reason)).await?;
+            self.uncaring_send(ToDiscord::End(reason)).await;
             sleep(delay).await;
             delay += Duration::from_secs(5);
         }
@@ -132,13 +132,12 @@ impl Minecraft {
             match event {
                 Login => {
                     *delay = Duration::from_secs(5);
-                    self.sender
-                        .send_async(ToDiscord::Start(client.profile.name.clone()))
-                        .await?;
+                    self.uncaring_send(ToDiscord::Start(client.profile.name.clone()))
+                        .await;
                 }
                 Chat(packet) => {
                     if let Some(msg) = chat::handle(packet.content()) {
-                        self.sender.send_async(msg).await?
+                        self.uncaring_send(msg).await;
                     }
                 }
                 Packet(packet) => {
@@ -154,5 +153,10 @@ impl Minecraft {
         }
 
         Ok(())
+    }
+
+    /// Send a message to Discord over the bridge, not caring if it fails or not
+    async fn uncaring_send(&self, item: ToDiscord) {
+        let _ = self.sender.send_async(item).await;
     }
 }

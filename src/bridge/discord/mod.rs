@@ -6,7 +6,13 @@ use super::{config::Config, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
 use serenity::{
-    async_trait, builder::CreateEmbed, http::Http, json::Value, model::prelude::*, prelude::*,
+    async_trait,
+    builder::CreateEmbed,
+    client::ClientBuilder,
+    http::{Http, HttpBuilder},
+    json::Value,
+    model::prelude::*,
+    prelude::*,
     utils::Colour,
 };
 use url::Url;
@@ -29,16 +35,30 @@ impl Discord {
     ///
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new(
-        (tx, rx): (Sender<ToMinecraft>, Receiver<ToDiscord>),
+        (sender, receiver): (Sender<ToMinecraft>, Receiver<ToDiscord>),
         config: Config,
     ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-        let client = Client::builder(&config.token, intents)
+        let http = HttpBuilder::new(&config.token).build();
+
+        let channels = Destinations {
+            guild: Self::resolve_channel(&http, config.channels.guild).await?,
+            officer: Self::resolve_channel(&http, config.channels.officer).await?,
+        };
+
+        let webhooks = Destinations {
+            guild: Self::resolve_webhook(&http, &channels.guild).await?,
+            officer: Self::resolve_webhook(&http, &channels.officer).await?,
+        };
+
+        let client = ClientBuilder::new_with_http(http, intents)
             .event_handler(Handler {
                 config,
-                sender: tx,
-                reciever: rx,
+                sender,
+                receiver,
+                channels,
+                webhooks,
             })
             .await?;
 
@@ -49,6 +69,50 @@ impl Discord {
     pub(super) async fn start(mut self) -> Result<()> {
         Ok(self.client.start().await?)
     }
+
+    /// Find a Discord channel with a given ID
+    async fn resolve_channel(http: &Http, id: u64) -> Result<GuildChannel> {
+        match http.get_channel(id).await? {
+            Channel::Guild(channel) => match channel.is_text_based() {
+                true => Ok(channel),
+                false => Err(BridgeError::ChannelInvalid(format!(
+                    "Expected a text-based channel, got #{channel} ({})",
+                    channel.id.0,
+                ))),
+            },
+            channel => Err(BridgeError::ChannelInvalid(format!(
+                "Expected a guild channel, got #{channel} ({})",
+                channel.id().0
+            ))),
+        }
+    }
+
+    /// Find a Discord webhook in the given channel that is owned by the client bot user
+    async fn resolve_webhook(http: &Http, channel: &GuildChannel) -> Result<Webhook> {
+        let current_user = http.get_current_user().await?;
+
+        let hook = channel.webhooks(&http).await?.into_iter().find(|x| {
+            x.user
+                .as_ref()
+                .is_some_and(|user| user.id == current_user.id)
+        });
+
+        Ok(match hook {
+            Some(hook) => hook,
+            None => match current_user.avatar_url() {
+                Some(url) => {
+                    channel
+                        .create_webhook_with_avatar(
+                            http,
+                            "Bridge",
+                            AttachmentType::Image(Url::parse(&url).unwrap()),
+                        )
+                        .await
+                }
+                None => channel.create_webhook(http, "Bridge").await,
+            }?,
+        })
+    }
 }
 
 /// The handler for all Discord events
@@ -58,7 +122,11 @@ struct Handler {
     /// The channel used to send payloads to Minecraft
     sender: Sender<ToMinecraft>,
     /// The channel used to recieve payloads from Minecraft
-    reciever: Receiver<ToDiscord>,
+    receiver: Receiver<ToDiscord>,
+    /// The channels to send messages to
+    channels: Destinations<GuildChannel>,
+    /// The webhooks to send messages to
+    webhooks: Destinations<Webhook>,
 }
 
 #[async_trait]
@@ -84,34 +152,16 @@ impl EventHandler for Handler {
             .expect("Failed to send discord message to minecraft");
     }
 
-    async fn ready(&self, ctx: Context, client: Ready) {
-        let (guild_channel, officer_channel) = (
-            self.resolve_channel(&ctx, self.config.channels.guild)
-                .await
-                .expect("Guild channel not found"),
-            self.resolve_channel(&ctx, self.config.channels.officer)
-                .await
-                .expect("Officer channel not found"),
-        );
-
-        let (guild_webhook, officer_webhook) = (
-            self.resolve_webhook(&guild_channel, &ctx, &client)
-                .await
-                .expect("Guild webhook could not be found or created"),
-            self.resolve_webhook(&officer_channel, &ctx, &client)
-                .await
-                .expect("Officer webhook could not be found or created"),
-        );
-
+    async fn ready(&self, ctx: Context, _client: Ready) {
         let mut state = State::Offline;
 
-        while let Ok(payload) = self.reciever.recv_async().await {
+        while let Ok(payload) = self.receiver.recv_async().await {
             use ToDiscord::*;
             match payload {
                 Message(author, content, chat) => {
                     let webhook = match chat {
-                        Chat::Guild => &guild_webhook,
-                        Chat::Officer => &officer_webhook,
+                        Chat::Guild => &self.webhooks.guild,
+                        Chat::Officer => &self.webhooks.officer,
                     };
 
                     let _ = self
@@ -127,8 +177,8 @@ impl EventHandler for Handler {
                         .colour(GREEN);
 
                     let _ = tokio::join!(
-                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
-                        self.send_channel_embed(&ctx.http, &officer_channel, embed.clone())
+                        self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &self.channels.officer, embed.clone())
                     );
 
                     state = State::Online;
@@ -142,8 +192,8 @@ impl EventHandler for Handler {
                             .colour(RED);
 
                         let _ = tokio::join!(
-                            self.send_channel_embed(&ctx.http, &guild_channel, embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned()),
-                            self.send_channel_embed(&ctx.http, &officer_channel, embed.clone().description(format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")).to_owned()),
+                            self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned()),
+                            self.send_channel_embed(&ctx.http, &self.channels.officer, embed.clone().description(format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")).to_owned()),
                         );
                     }
 
@@ -152,7 +202,7 @@ impl EventHandler for Handler {
                 Login(user) => {
                     let _ = self
                         .send_webhook_embed(
-                            &guild_webhook,
+                            &self.webhooks.guild,
                             &ctx.http,
                             &user,
                             Embed::fake(|f| f.description(format!("{user} joined.")).colour(GREEN)),
@@ -162,7 +212,7 @@ impl EventHandler for Handler {
                 Logout(user) => {
                     let _ = self
                         .send_webhook_embed(
-                            &guild_webhook,
+                            &self.webhooks.guild,
                             &ctx.http,
                             &user,
                             Embed::fake(|f| f.description(format!("{user} left.")).colour(RED)),
@@ -178,8 +228,8 @@ impl EventHandler for Handler {
                     );
 
                     let _ = tokio::join!(
-                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
-                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                        self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
                     );
                 }
                 Leave(user) => {
@@ -191,15 +241,15 @@ impl EventHandler for Handler {
                     );
 
                     let _ = tokio::join!(
-                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
-                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                        self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
                     );
                 }
                 Kick(user, by) => {
                     let _ = tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
-                            &guild_channel,
+                            &self.channels.guild,
                             builders::embed_with_head(
                                 &user,
                                 "Member Kicked!",
@@ -209,7 +259,7 @@ impl EventHandler for Handler {
                         ),
                         self.send_channel_embed(
                             &ctx.http,
-                            &officer_channel,
+                            &self.channels.officer,
                             builders::embed_with_head(
                                 &user,
                                 "Member Kicked!",
@@ -226,8 +276,8 @@ impl EventHandler for Handler {
                     );
 
                     let _ = tokio::join!(
-                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
-                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                        self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
                     );
                 }
                 Demotion(user, from, to) => {
@@ -237,15 +287,15 @@ impl EventHandler for Handler {
                     );
 
                     let _ = tokio::join!(
-                        self.send_channel_embed(&ctx.http, &guild_channel, embed.clone()),
-                        self.send_channel_embed(&ctx.http, &officer_channel, embed),
+                        self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
+                        self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
                     );
                 }
                 Mute(user, by, time) => {
                     let _ = self
                         .send_channel_embed(
                             &ctx.http,
-                            &officer_channel,
+                            &self.channels.officer,
                             builders::basic_embed(
                                 format!("`{user}` has been muted for `{time}` by `{by}`").as_str(),
                                 RED,
@@ -257,7 +307,7 @@ impl EventHandler for Handler {
                     let _ = self
                         .send_channel_embed(
                             &ctx.http,
-                            &officer_channel,
+                            &self.channels.officer,
                             builders::basic_embed(
                                 format!("`{user}` has been unmuted by `{by}`").as_str(),
                                 GREEN,
@@ -269,7 +319,7 @@ impl EventHandler for Handler {
                     let _ = tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
-                            &guild_channel,
+                            &self.channels.guild,
                             builders::basic_embed(
                                 format!("Guild Chat has been muted for `{time}`").as_str(),
                                 RED
@@ -277,7 +327,7 @@ impl EventHandler for Handler {
                         ),
                         self.send_channel_embed(
                             &ctx.http,
-                            &officer_channel,
+                            &self.channels.officer,
                             builders::basic_embed(
                                 format!("Guild Chat has been muted for `{time}` by `{by}`")
                                     .as_str(),
@@ -290,12 +340,12 @@ impl EventHandler for Handler {
                     let _ = tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
-                            &guild_channel,
+                            &self.channels.guild,
                             builders::basic_embed("Guild Chat has been unmuted", GREEN)
                         ),
                         self.send_channel_embed(
                             &ctx.http,
-                            &officer_channel,
+                            &self.channels.officer,
                             builders::basic_embed(
                                 format!("Guild Chat has been unmuted by `{by}`").as_str(),
                                 GREEN
@@ -309,46 +359,6 @@ impl EventHandler for Handler {
 }
 
 impl Handler {
-    /// Find a Discord channel with a given ID
-    async fn resolve_channel(&self, ctx: &Context, id: u64) -> Result<GuildChannel> {
-        match ctx.http.get_channel(id).await? {
-            Channel::Guild(channel) => Ok(channel),
-            wrong_channel => Err(anyhow!(
-                "Channel {wrong_channel:?} is not of type GuildChannel"
-            )),
-        }
-    }
-
-    /// Find a Discord webhook in the given channel that is owned by the client bot user
-    async fn resolve_webhook(
-        &self,
-        channel: &GuildChannel,
-        ctx: &Context,
-        client: &Ready,
-    ) -> Result<Webhook> {
-        let hook = channel.webhooks(&ctx.http).await?.into_iter().find(|x| {
-            x.user
-                .as_ref()
-                .is_some_and(|user| user.id == client.user.id)
-        });
-
-        Ok(match hook {
-            Some(hook) => hook,
-            None => match client.user.avatar_url() {
-                Some(url) => {
-                    channel
-                        .create_webhook_with_avatar(
-                            &ctx.http,
-                            "Bridge",
-                            AttachmentType::Image(Url::parse(&url).unwrap()),
-                        )
-                        .await
-                }
-                None => channel.create_webhook(&ctx.http, "Bridge").await,
-            }?,
-        })
-    }
-
     /// Send a webhook message copying the players name and avatar, with all mentions disabled
     async fn send_webhook_text(
         &self,
@@ -412,4 +422,13 @@ enum State {
     ///
     /// The next status message that should be sent is for [`Self::Online`]
     Offline,
+}
+
+/// A destination for a message
+#[derive(Debug)]
+struct Destinations<T> {
+    /// The guild channel
+    guild: T,
+    /// The officer channel
+    officer: T,
 }

@@ -10,7 +10,6 @@ mod minecraft;
 mod types;
 
 use crate::prelude::*;
-use colored::Colorize;
 use config::Config;
 use discord::Discord;
 use minecraft::Minecraft;
@@ -26,14 +25,9 @@ pub(super) struct Bridge {
 
 /// Create and start the bridge
 pub(super) async fn create_bridge() -> Result<()> {
-    let bridge = Bridge::new()
-        .await
-        .map_err(|msg| anyhow!("{}: {}", "Bridge setup error".red(), msg))?;
+    let bridge = Bridge::new().await?;
 
-    bridge
-        .start()
-        .await
-        .map_err(|msg| anyhow!("{}: {}", "Bridge runtime error".red(), msg))?;
+    bridge.start().await?;
 
     Ok(())
 }
@@ -43,18 +37,18 @@ impl Bridge {
     async fn new() -> Result<Self> {
         let config = Config::new()?;
 
-        let (minecraft_sender, discord_reciever) = flume::unbounded::<ToDiscord>();
-        let (discord_sender, minecraft_reciever) = flume::unbounded::<ToMinecraft>();
+        let (minecraft_sender, discord_receiver) = flume::unbounded::<ToDiscord>();
+        let (discord_sender, minecraft_receiver) = flume::unbounded::<ToMinecraft>();
 
         Ok(Self {
-            minecraft: Minecraft::new((minecraft_sender, minecraft_reciever)).await,
-            discord: Discord::new((discord_sender, discord_reciever), config).await?,
+            minecraft: Minecraft::new((minecraft_sender, minecraft_receiver)).await,
+            discord: Discord::new((discord_sender, discord_receiver), config).await?,
         })
     }
 
     /// Start both halves of the Bridge
     async fn start(self) -> Result<()> {
-        tokio::try_join!(self.minecraft.start(), self.discord.start())?;
+        tokio::try_join!(self.discord.start(), self.minecraft.start())?;
 
         Ok(())
     }

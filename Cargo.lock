@@ -722,7 +722,6 @@ dependencies = [
 name = "bridge"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "azalea",
  "colored",
  "dotenv",
@@ -730,6 +729,7 @@ dependencies = [
  "lazy-regex",
  "regex",
  "serenity",
+ "thiserror",
  "tokio",
  "url",
 ]
