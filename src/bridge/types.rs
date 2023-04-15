@@ -39,8 +39,7 @@ pub enum ToMinecraft {
     /// A Message containing the users nickname, message content and the destination chat
     Message(String, String, Chat),
     /// A Command to be executed by the Minecraft client
-    #[allow(unused)]
-    Command(String), // Will be for discord commands such as /mute
+    Command(String),
 }
 
 /// A chat which messages can be sent from and to

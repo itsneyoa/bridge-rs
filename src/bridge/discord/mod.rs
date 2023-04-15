@@ -1,6 +1,7 @@
 //! The Discord half of the Bridge
 
 mod builders;
+mod commands;
 
 use super::{config::Config, Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
@@ -11,7 +12,7 @@ use serenity::{
     client::ClientBuilder,
     http::{Http, HttpBuilder},
     json::Value,
-    model::prelude::*,
+    model::{application::interaction::Interaction, prelude::*},
     prelude::*,
     utils::Colour,
 };
@@ -153,6 +154,13 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, _client: Ready) {
+        self.channels
+            .guild
+            .guild_id
+            .set_application_commands(&ctx.http, |f| commands::register_commands(f))
+            .await
+            .expect("Failed to create application commands");
+
         let mut state = State::Offline;
 
         while let Ok(payload) = self.receiver.recv_async().await {
@@ -354,6 +362,40 @@ impl EventHandler for Handler {
                     );
                 }
             }
+        }
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if let Interaction::ApplicationCommand(command) = interaction {
+            command
+                .defer(&ctx.http)
+                .await
+                .expect("Could not defer command");
+
+            let embed = if let Some(executor) = commands::EXECUTORS.get(command.data.name.as_str())
+            {
+                executor(&command.data.options, self.sender.clone()).unwrap_or_else(|| {
+                    let mut embed = CreateEmbed::default();
+                    embed
+                        .description("Something went wrong while trying to run that")
+                        .colour(RED)
+                        .to_owned()
+                })
+            } else {
+                let mut embed = CreateEmbed::default();
+                embed
+                    .description(format!(
+                        "Command `{}` could not be found",
+                        command.data.name
+                    ))
+                    .colour(RED)
+                    .to_owned()
+            };
+
+            command
+                .edit_original_interaction_response(&ctx.http, |f| f.set_embed(embed))
+                .await
+                .unwrap();
         }
     }
 }
