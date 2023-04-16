@@ -19,7 +19,9 @@
 
 ## To do
 - [x] Add all guild events
-- [ ] Add discord slash commands
+- [x] Add discord slash commands
+- [ ] Slash command replies
+- [ ] Slash command autocomplete
 - [ ] Sanitise discord nicks and content
 - [ ] Online/offline messages
 - [ ] Logging

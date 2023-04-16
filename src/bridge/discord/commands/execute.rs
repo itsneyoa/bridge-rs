@@ -20,8 +20,8 @@ pub static EXECUTE_COMMAND: Command = Command {
             required: true,
         }]
     },
-    executor: |options, sender| {
-        let command = options.get_str("command")?;
+    executor: |interaction, sender, _| {
+        let command = interaction.data.options.get_str("command")?;
 
         sender
             .send(crate::bridge::types::ToMinecraft::Command(format!(

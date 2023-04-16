@@ -1,4 +1,4 @@
-//! hi
+//! Discord builders
 
 use serenity::{builder::CreateEmbed, utils::Colour};
 

@@ -1,22 +1,46 @@
 //! Discord commands
 
-use crate::bridge::types::ToMinecraft;
+use crate::bridge::{config::Config, types::ToMinecraft};
 use flume::Sender;
 use serenity::{
     builder::{
         CreateApplicationCommand, CreateApplicationCommandOption, CreateApplicationCommands,
         CreateEmbed,
     },
-    model::{prelude::interaction::application_command::CommandDataOption, Permissions},
+    json::Value,
+    model::{
+        prelude::interaction::application_command::{
+            ApplicationCommandInteraction, CommandDataOption,
+        },
+        Permissions,
+    },
+    prelude::Context,
 };
 use std::collections::HashMap;
 
+pub mod demote;
 pub mod execute;
-pub mod ping;
+pub mod help;
+pub mod invite;
+pub mod kick;
+pub mod mute;
+pub mod promote;
+pub mod setrank;
+pub mod unmute;
 
 /// Get all the commands
 pub fn get_commands() -> Vec<&'static Command> {
-    vec![&ping::PING_COMMAND, &execute::EXECUTE_COMMAND]
+    vec![
+        &demote::DEMOTE_COMMAND,
+        &execute::EXECUTE_COMMAND,
+        &help::HELP_COMMAND,
+        &invite::INVITE_COMMAND,
+        &kick::KICK_COMMAND,
+        &mute::MUTE_COMMAND,
+        &promote::PROMOTE_COMMAND,
+        &setrank::SETRANK_COMMAND,
+        &unmute::UNMUTE_COMMAND,
+    ]
 }
 
 lazy_static::lazy_static! {
@@ -32,7 +56,11 @@ lazy_static::lazy_static! {
 }
 
 /// Command executor
-type Executor = fn(&[CommandDataOption], Sender<ToMinecraft>) -> Option<CreateEmbed>;
+type Executor = fn(
+    &ApplicationCommandInteraction,
+    Sender<ToMinecraft>,
+    (&Config, &Context),
+) -> Option<CreateEmbed>;
 
 /// Command
 pub struct Command {
@@ -77,14 +105,6 @@ pub fn register_commands(f: &mut CreateApplicationCommands) -> &mut CreateApplic
     )
 }
 
-// /// Register a command
-// fn register_command<'a>(
-//     f: &'a mut CreateApplicationCommand,
-//     command: &Command,
-// ) -> &'a mut CreateApplicationCommand {
-//     command.into()
-// }
-
 /// Add a command to a hashmap
 trait Register {
     /// Register a command
@@ -114,6 +134,30 @@ enum CommandOption {
         /// Option required?
         required: bool,
     },
+    /// An Integer command
+    Integer {
+        /// Option name
+        name: &'static str,
+        /// Option description
+        description: &'static str,
+        /// Option minimum value
+        min: Option<i64>,
+        /// Option maximum value
+        max: Option<i64>,
+        /// Option required?
+        required: bool,
+    },
+    /// A set of String choices
+    Choices {
+        /// Option name
+        name: &'static str,
+        /// Option description
+        description: &'static str,
+        /// Option choices
+        choices: &'static [(&'static str, &'static str)],
+        /// Option required?
+        required: bool,
+    },
 }
 
 impl From<&CommandOption> for CreateApplicationCommandOption {
@@ -133,6 +177,8 @@ impl From<&CommandOption> for CreateApplicationCommandOption {
                 option.kind(OptionType::String);
                 option.name(name);
                 option.description(description);
+                option.required(*required);
+                option.set_autocomplete(*autocomplete);
 
                 if let Some(min_length) = min_length {
                     option.min_length(*min_length);
@@ -142,9 +188,49 @@ impl From<&CommandOption> for CreateApplicationCommandOption {
                     option.max_length(*max_length);
                 }
 
-                option.set_autocomplete(*autocomplete);
+                option
+            }
+            CommandOption::Integer {
+                name,
+                description,
+                min,
+                max,
+                required,
+            } => {
+                let mut option = Self::default();
 
+                option.kind(OptionType::Integer);
+                option.name(name);
+                option.description(description);
                 option.required(*required);
+
+                if let Some(min) = min {
+                    option.min_int_value(*min);
+                }
+
+                if let Some(max) = max {
+                    option.max_int_value(*max);
+                }
+
+                option
+            }
+            CommandOption::Choices {
+                name,
+                description,
+                choices,
+                required,
+            } => {
+                let mut option = Self::default();
+
+                option.kind(OptionType::String);
+                option.name(name);
+                option.description(description);
+                option.required(*required);
+
+                for (name, value) in choices.iter() {
+                    option.add_string_choice(name, value);
+                }
+
                 option
             }
         };
@@ -155,16 +241,33 @@ impl From<&CommandOption> for CreateApplicationCommandOption {
 
 /// Get a command option
 trait GetOptions {
+    /// Get an option
+    fn get_option(&self, name: &'static str) -> Option<&Value>;
     /// Get a str option
     fn get_str(&self, name: &'static str) -> Option<&str>;
+    /// Get an integer option
+    fn get_int(&self, name: &'static str) -> Option<i64>;
+    /// Get a choice option
+    fn get_choice(&self, name: &'static str) -> Option<&str>;
 }
 
-impl GetOptions for &[CommandDataOption] {
-    fn get_str(&self, name: &'static str) -> Option<&str> {
+impl GetOptions for Vec<CommandDataOption> {
+    fn get_option(&self, name: &'static str) -> Option<&Value> {
         self.iter()
             .find(|option| option.name == name)?
             .value
-            .as_ref()?
-            .as_str()
+            .as_ref()
+    }
+
+    fn get_str(&self, name: &'static str) -> Option<&str> {
+        Some(self.get_option(name)?.as_str()?.trim())
+    }
+
+    fn get_int(&self, name: &'static str) -> Option<i64> {
+        self.get_option(name)?.as_i64()
+    }
+
+    fn get_choice(&self, name: &'static str) -> Option<&str> {
+        self.get_option(name)?.as_str()
     }
 }

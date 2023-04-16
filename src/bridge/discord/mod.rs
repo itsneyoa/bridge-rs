@@ -162,7 +162,6 @@ impl EventHandler for Handler {
             .expect("Failed to create application commands");
 
         let mut state = State::Offline;
-
         while let Ok(payload) = self.receiver.recv_async().await {
             use ToDiscord::*;
             match payload {
@@ -366,33 +365,34 @@ impl EventHandler for Handler {
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            command
+        if let Interaction::ApplicationCommand(interaction) = interaction {
+            interaction
                 .defer(&ctx.http)
                 .await
                 .expect("Could not defer command");
 
-            let embed = if let Some(executor) = commands::EXECUTORS.get(command.data.name.as_str())
-            {
-                executor(&command.data.options, self.sender.clone()).unwrap_or_else(|| {
+            let embed =
+                if let Some(executor) = commands::EXECUTORS.get(interaction.data.name.as_str()) {
+                    executor(&interaction, self.sender.clone(), (&self.config, &ctx))
+                        .unwrap_or_else(|| {
+                            let mut embed = CreateEmbed::default();
+                            embed
+                                .description("Something went wrong while trying to run that")
+                                .colour(RED)
+                                .to_owned()
+                        })
+                } else {
                     let mut embed = CreateEmbed::default();
                     embed
-                        .description("Something went wrong while trying to run that")
+                        .description(format!(
+                            "Command `{}` could not be found",
+                            interaction.data.name
+                        ))
                         .colour(RED)
                         .to_owned()
-                })
-            } else {
-                let mut embed = CreateEmbed::default();
-                embed
-                    .description(format!(
-                        "Command `{}` could not be found",
-                        command.data.name
-                    ))
-                    .colour(RED)
-                    .to_owned()
-            };
+                };
 
-            command
+            interaction
                 .edit_original_interaction_response(&ctx.http, |f| f.set_embed(embed))
                 .await
                 .unwrap();
