@@ -173,13 +173,7 @@ pub(super) fn handle(message: String) -> Option<ToDiscord> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const USER: &str = "neyoa";
-    const CONTENT: &str = "neyoa";
-    const BY: &str = "GloriousShaft";
-    const FROM: &str = "Member";
-    const TO: &str = "Staff";
-    const TIME: &str = "30d";
+    use test_case::test_case;
 
     fn test(content: String, expected: Option<ToDiscord>) {
         assert_eq!(handle(content), expected)
@@ -187,194 +181,141 @@ mod tests {
 
     #[test]
     fn none() {
-        assert!(handle("-----".into()).is_none());
+        assert!(handle("-----".into()).is_none())
     }
 
-    #[test]
-    fn guild() {
-        use Chat::Guild;
-
+    #[test_case("neyoa", "Hello, World!" ; "No player or guild rank")]
+    #[test_case("[VIP+] neyoa", "Hello, World!" ; "Player rank only")]
+    #[test_case("neyoa [Staff]", "Hello, World!" ; "Guild rank only")]
+    #[test_case("neyoa", "Hello, World!" ; "Player and guild rank")]
+    fn guild(user: &str, content: &str) {
         test(
-            format!("Guild > {USER}: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Guild)),
-        );
-        test(
-            format!("Guild > [MVP+] {USER}: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Guild)),
-        );
-        test(
-            format!("Guild > {USER} [Staff]: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Guild)),
-        );
-        test(
-            format!("Guild > [VIP] {USER} [Member]: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Guild)),
-        );
+            format!("Guild > {user}: {content}"),
+            Some(ToDiscord::Message(
+                "neyoa".to_string(),
+                "Hello, World!".to_string(),
+                Chat::Guild,
+            )),
+        )
     }
 
-    #[test]
-    fn officer() {
-        use Chat::Officer;
-
+    #[test_case("neyoa", "Hello, World!" ; "No player or guild rank")]
+    #[test_case("[VIP+] neyoa", "Hello, World!" ; "Player rank only")]
+    #[test_case("neyoa [Staff]", "Hello, World!" ; "Guild rank only")]
+    #[test_case("neyoa", "Hello, World!" ; "Player and guild rank")]
+    fn officer(user: &str, content: &str) {
         test(
-            format!("Officer > {USER}: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Officer)),
-        );
-        test(
-            format!("Officer > [MVP+] {USER}: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Officer)),
-        );
-        test(
-            format!("Officer > {USER} [Staff]: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Officer)),
-        );
-        test(
-            format!("Officer > [VIP] {USER} [Member]: {CONTENT}"),
-            Some(ToDiscord::Message(USER.into(), CONTENT.into(), Officer)),
-        );
+            format!("Officer > {user}: {content}"),
+            Some(ToDiscord::Message(
+                "neyoa".to_string(),
+                "Hello, World!".to_string(),
+                Chat::Officer,
+            )),
+        )
     }
 
-    #[test]
-    fn join() {
-        use ToDiscord::Join;
-
-        test(format!("{USER} joined the guild!"), Some(Join(USER.into())));
+    #[test_case("neyoa" ; "No player rank")]
+    #[test_case("[VIP+] neyoa" ; "Player rank")]
+    fn join(user: &str) {
         test(
-            format!("[VIP+] {USER} joined the guild!"),
-            Some(Join(USER.into())),
-        );
+            format!("{user} joined the guild!"),
+            Some(ToDiscord::Join("neyoa".to_string())),
+        )
     }
 
-    #[test]
-    fn leave() {
-        use ToDiscord::Leave;
-
-        test(format!("{USER} left the guild!"), Some(Leave(USER.into())));
+    #[test_case("neyoa" ; "No player rank")]
+    #[test_case("[VIP+] neyoa" ; "Player rank")]
+    fn leave(user: &str) {
         test(
-            format!("[VIP+] {USER} left the guild!"),
-            Some(Leave(USER.into())),
-        );
+            format!("{user} left the guild!"),
+            Some(ToDiscord::Leave("neyoa".to_string())),
+        )
     }
 
-    #[test]
-    fn kick() {
-        use ToDiscord::Kick;
-
+    #[test_case("neyoa", "lesbianeyoa" ; "No player ranks" )]
+    #[test_case("[VIP] neyoa", "lesbianeyoa" ; "User has rank" )]
+    #[test_case("neyoa", "[MVP++] lesbianeyoa" ; "Kicker has rank" )]
+    #[test_case("[VIP] neyoa", "[MVP] lesbianeyoa" ; "Both players have ranks" )]
+    fn kick(user: &str, by: &str) {
         test(
-            format!("{USER} was kicked from the guild by {BY}!"),
-            Some(Kick(USER.into(), BY.into())),
-        );
-        test(
-            format!("[VIP+] {USER} was kicked from the guild by {BY}!"),
-            Some(Kick(USER.into(), BY.into())),
-        );
-        test(
-            format!("{USER} was kicked from the guild by [MVP] {BY}!"),
-            Some(Kick(USER.into(), BY.into())),
-        );
-        test(
-            format!("[VIP] {USER} was kicked from the guild by [MVP+] {BY}!"),
-            Some(Kick(USER.into(), BY.into())),
-        );
+            format!("{user} was kicked from the guild by {by}!"),
+            Some(ToDiscord::Kick(
+                "neyoa".to_string(),
+                "lesbianeyoa".to_string(),
+            )),
+        )
     }
 
-    #[test]
-    fn promote() {
-        use ToDiscord::Promotion;
-
+    #[test_case("neyoa", "Member", "Staff" ; "No player rank")]
+    #[test_case("[VIP] neyoa", "Member", "Staff" ; "Player rank")]
+    fn promote(user: &str, from: &str, to: &str) {
         test(
-            format!("{USER} was promoted from {FROM} to {TO}"),
-            Some(Promotion(USER.into(), FROM.into(), TO.into())),
-        );
-        test(
-            format!("[VIP] {USER} was promoted from {FROM} to {TO}"),
-            Some(Promotion(USER.into(), FROM.into(), TO.into())),
-        );
+            format!("{user} was promoted from {from} to {to}"),
+            Some(ToDiscord::Promotion(
+                "neyoa".to_string(),
+                "Member".to_string(),
+                "Staff".to_string(),
+            )),
+        )
     }
 
-    #[test]
-    fn demote() {
-        use ToDiscord::Demotion;
-
+    #[test_case("neyoa", "Staff", "Member" ; "No player rank")]
+    #[test_case("[VIP] neyoa", "Staff", "Member" ; "Player rank")]
+    fn demote(user: &str, from: &str, to: &str) {
         test(
-            format!("{USER} was demoted from {FROM} to {TO}"),
-            Some(Demotion(USER.into(), FROM.into(), TO.into())),
-        );
-        test(
-            format!("[VIP] {USER} was demoted from {FROM} to {TO}"),
-            Some(Demotion(USER.into(), FROM.into(), TO.into())),
-        );
+            format!("{user} was demoted from {from} to {to}"),
+            Some(ToDiscord::Demotion(
+                "neyoa".to_string(),
+                "Staff".to_string(),
+                "Member".to_string(),
+            )),
+        )
     }
 
-    #[test]
-    fn mute() {
-        use ToDiscord::Mute;
-
+    #[test_case("neyoa", "lesbianeyoa", "12h" ; "No player ranks" )]
+    #[test_case("[VIP] neyoa", "lesbianeyoa", "12h" ; "User has rank" )]
+    #[test_case("neyoa", "[MVP+] lesbianeyoa", "12h" ; "Muter has rank" )]
+    #[test_case("[MVP+] neyoa", "[VIP] lesbianeyoa", "12h" ; "Both players have ranks" )]
+    fn mute(user: &str, by: &str, time: &str) {
         test(
-            format!("{BY} has muted {USER} for {TIME}"),
-            Some(Mute(USER.into(), BY.into(), TIME.into())),
-        );
-        test(
-            format!("[VIP+] {BY} has muted {USER} for {TIME}"),
-            Some(Mute(USER.into(), BY.into(), TIME.into())),
-        );
-        test(
-            format!("{BY} has muted [MVP+] {USER} for {TIME}"),
-            Some(Mute(USER.into(), BY.into(), TIME.into())),
-        );
-        test(
-            format!("[VIP] {BY} has muted [MVP] {USER} for {TIME}"),
-            Some(Mute(USER.into(), BY.into(), TIME.into())),
-        );
+            format!("{by} has muted {user} for {time}"),
+            Some(ToDiscord::Mute(
+                "neyoa".to_string(),
+                "lesbianeyoa".to_string(),
+                "12h".to_string(),
+            )),
+        )
     }
 
-    #[test]
-    fn unmute() {
-        use ToDiscord::Unmute;
-
+    #[test_case("neyoa", "lesbianeyoa" ; "No player ranks" )]
+    #[test_case("[VIP] neyoa", "lesbianeyoa" ; "User has rank" )]
+    #[test_case("neyoa", "[MVP+] lesbianeyoa" ; "Unmuter has rank" )]
+    #[test_case("[MVP+] neyoa", "[VIP] lesbianeyoa" ; "Both players have ranks" )]
+    fn unmute(user: &str, by: &str) {
         test(
-            format!("{BY} has unmuted {USER}"),
-            Some(Unmute(USER.into(), BY.into())),
-        );
-        test(
-            format!("[VIP+] {BY} has unmuted {USER}"),
-            Some(Unmute(USER.into(), BY.into())),
-        );
-        test(
-            format!("{BY} has unmuted [MVP+] {USER}"),
-            Some(Unmute(USER.into(), BY.into())),
-        );
-        test(
-            format!("[VIP] {BY} has unmuted [MVP] {USER}"),
-            Some(Unmute(USER.into(), BY.into())),
-        );
+            format!("{by} has unmuted {user}"),
+            Some(ToDiscord::Unmute(
+                "neyoa".to_string(),
+                "lesbianeyoa".to_string(),
+            )),
+        )
     }
 
-    #[test]
-    fn guild_mute() {
-        use ToDiscord::GuildMute;
-
+    #[test_case("neyoa", "1d" ; "No player rank")]
+    #[test_case("[VIP] neyoa", "1d" ; "Player rank")]
+    fn guild_mute(user: &str, time: &str) {
         test(
-            format!("{BY} has muted the guild chat for {TIME}"),
-            Some(GuildMute(BY.into(), TIME.into())),
-        );
-        test(
-            format!("[VIP+] {BY} has muted the guild chat for {TIME}"),
-            Some(GuildMute(BY.into(), TIME.into())),
-        );
+            format!("{user} has muted the guild chat for {time}"),
+            Some(ToDiscord::GuildMute("neyoa".to_string(), "1d".into())),
+        )
     }
 
-    #[test]
-    fn guild_unmute() {
-        use ToDiscord::GuildUnmute;
-
+    #[test_case("neyoa" ; "No player rank")]
+    #[test_case("[VIP] neyoa" ; "Player rank")]
+    fn guild_unmute(by: &str) {
         test(
-            format!("{BY} has unmuted the guild chat!"),
-            Some(GuildUnmute(BY.into())),
-        );
-        test(
-            format!("[VIP+] {BY} has unmuted the guild chat!"),
-            Some(GuildUnmute(BY.into())),
-        );
+            format!("{by} has unmuted the guild chat!"),
+            Some(ToDiscord::GuildUnmute("neyoa".to_string())),
+        )
     }
 }

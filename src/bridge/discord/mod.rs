@@ -1,9 +1,10 @@
 //! The Discord half of the Bridge
 
+mod autocomplete;
 mod builders;
 mod commands;
 
-use super::{config::Config, Chat, ToDiscord, ToMinecraft};
+use super::{config::Config, types::Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
 use flume::{Receiver, Sender};
 use serenity::{
@@ -60,6 +61,7 @@ impl Discord {
                 receiver,
                 channels,
                 webhooks,
+                autocomplete: autocomplete::Autocomplete::new(),
             })
             .await?;
 
@@ -128,31 +130,12 @@ struct Handler {
     channels: Destinations<GuildChannel>,
     /// The webhooks to send messages to
     webhooks: Destinations<Webhook>,
+    /// The autocomplete module
+    autocomplete: autocomplete::Autocomplete,
 }
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
-        if msg.author.bot || msg.kind != MessageType::Regular {
-            return;
-        }
-
-        let chat = match msg.channel_id.0 {
-            id if (id == self.config.channels.guild) => Chat::Guild,
-            id if (id == self.config.channels.officer) => Chat::Officer,
-            _ => return,
-        };
-
-        self.sender
-            .send_async(ToMinecraft::Message(
-                msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
-                msg.content,
-                chat,
-            ))
-            .await
-            .expect("Failed to send discord message to minecraft");
-    }
-
     async fn ready(&self, ctx: Context, _client: Ready) {
         self.channels
             .guild
@@ -164,8 +147,11 @@ impl EventHandler for Handler {
         let mut state = State::Offline;
         while let Ok(payload) = self.receiver.recv_async().await {
             use ToDiscord::*;
+
             match payload {
                 Message(author, content, chat) => {
+                    self.autocomplete.add_member(&author);
+
                     let webhook = match chat {
                         Chat::Guild => &self.webhooks.guild,
                         Chat::Officer => &self.webhooks.officer,
@@ -207,6 +193,8 @@ impl EventHandler for Handler {
                     state = State::Offline;
                 }
                 Login(user) => {
+                    self.autocomplete.add_member(&user);
+
                     let _ = self
                         .send_webhook_embed(
                             &self.webhooks.guild,
@@ -217,6 +205,8 @@ impl EventHandler for Handler {
                         .await;
                 }
                 Logout(user) => {
+                    self.autocomplete.add_member(&user);
+
                     let _ = self
                         .send_webhook_embed(
                             &self.webhooks.guild,
@@ -227,6 +217,8 @@ impl EventHandler for Handler {
                         .await;
                 }
                 Join(user) => {
+                    self.autocomplete.add_member(&user);
+
                     let embed = builders::embed_with_head(
                         &user,
                         "Member Joined!",
@@ -240,6 +232,8 @@ impl EventHandler for Handler {
                     );
                 }
                 Leave(user) => {
+                    self.autocomplete.remove_member(&user);
+
                     let embed = builders::embed_with_head(
                         &user,
                         "Member Left!",
@@ -253,6 +247,8 @@ impl EventHandler for Handler {
                     );
                 }
                 Kick(user, by) => {
+                    self.autocomplete.remove_member(&user);
+
                     let _ = tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
@@ -364,15 +360,39 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(interaction) = interaction {
-            interaction
-                .defer(&ctx.http)
-                .await
-                .expect("Could not defer command");
+    async fn message(&self, ctx: Context, msg: Message) {
+        if msg.author.bot || msg.kind != MessageType::Regular {
+            return;
+        }
 
-            let embed =
-                if let Some(executor) = commands::EXECUTORS.get(interaction.data.name.as_str()) {
+        let chat = match msg.channel_id.0 {
+            id if (id == self.config.channels.guild) => Chat::Guild,
+            id if (id == self.config.channels.officer) => Chat::Officer,
+            _ => return,
+        };
+
+        self.sender
+            .send_async(ToMinecraft::Message(
+                msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
+                msg.content,
+                chat,
+            ))
+            .await
+            .expect("Failed to send discord message to minecraft");
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        use Interaction::*;
+        match interaction {
+            ApplicationCommand(interaction) => {
+                interaction
+                    .defer(&ctx.http)
+                    .await
+                    .expect("Could not defer command");
+
+                let embed = if let Some(executor) =
+                    commands::EXECUTORS.get(interaction.data.name.as_str())
+                {
                     executor(&interaction, self.sender.clone(), (&self.config, &ctx))
                         .unwrap_or_else(|| {
                             let mut embed = CreateEmbed::default();
@@ -392,10 +412,33 @@ impl EventHandler for Handler {
                         .to_owned()
                 };
 
-            interaction
-                .edit_original_interaction_response(&ctx.http, |f| f.set_embed(embed))
-                .await
-                .unwrap();
+                interaction
+                    .edit_original_interaction_response(&ctx.http, |f| f.set_embed(embed))
+                    .await
+                    .unwrap();
+            }
+            Autocomplete(interaction) => {
+                if let Some(field) = interaction.data.options.iter().find(|e| e.focused) {
+                    let mut current_value = "";
+
+                    if let Some(value) = field.value.as_ref() {
+                        if let Some(value) = value.as_str() {
+                            current_value = value;
+                        }
+                    }
+
+                    let matches = self.autocomplete.get_matches(current_value).await;
+                    let _ = interaction
+                        .create_autocomplete_response(&ctx.http, |f| {
+                            for user in matches {
+                                f.add_string_choice(&user, &user);
+                            }
+                            f
+                        })
+                        .await;
+                }
+            }
+            _ => {}
         }
     }
 }
