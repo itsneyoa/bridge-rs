@@ -1,6 +1,6 @@
 //! Discord commands
 
-use crate::bridge::{config::Config, types::ToMinecraft};
+use crate::{config::Config, types::ToMinecraft};
 use flume::Sender;
 use serenity::{
     builder::{

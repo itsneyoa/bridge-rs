@@ -1,38 +1,45 @@
-//! Set Rank command
+//! Mute command
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
-/// Set Rank command
-pub static SETRANK_COMMAND: Command = Command {
-    name: "setrank",
-    description: "Sets the specified user to the specified guild rank",
-    permissions: Permissions::MANAGE_ROLES,
+/// Mute command
+pub static MUTE_COMMAND: Command = Command {
+    name: "mute",
+    description: "Mutes the specified user for the specified time",
+    permissions: Permissions::MODERATE_MEMBERS,
     options: {
         &[
             CommandOption::String {
                 name: "username",
-                description: "The user to set the rank of",
+                description: "The user to mute",
                 min_length: Some(1),
                 max_length: Some(16),
                 autocomplete: true,
                 required: true,
             },
-            CommandOption::String {
-                name: "rank",
-                description: "The rank to set the user to",
-                min_length: Some(1),
-                max_length: Some(16),
-                autocomplete: false,
+            CommandOption::Integer {
+                name: "time",
+                description: "The time for the mute",
+                min: Some(1),
+                max: Some(30),
+                required: true,
+            },
+            CommandOption::Choices {
+                name: "period",
+                description: "The time period to mute for",
+                choices: &[("Minutes", "m"), ("Hours", "h"), ("Days", "d")],
                 required: true,
             },
         ]
     },
     executor: |interaction, sender, _| {
         let user = interaction.data.options.get_str("username")?;
-        let rank = interaction.data.options.get_str("rank")?;
+        let time = interaction.data.options.get_int("time")?;
+        let period = interaction.data.options.get_choice("period")?;
         let mut embed = CreateEmbed::default();
 
         if user.contains(char::is_whitespace) {
@@ -45,14 +52,14 @@ pub static SETRANK_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g setrank {user} {rank}",
+            .send(ToMinecraft::Command(format!(
+                "/g mute {user} {time}{period}",
             )))
             .ok()?;
 
         Some(
             embed
-                .description(format!("Setting `{user}` to `{rank}`"))
+                .description(format!("Muting `{user}` for `{time}{period}`"))
                 .colour(GREEN)
                 .to_owned(),
         )

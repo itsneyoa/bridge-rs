@@ -2,6 +2,7 @@
 
 use super::super::GREEN;
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -24,9 +25,7 @@ pub static EXECUTE_COMMAND: Command = Command {
         let command = interaction.data.options.get_str("command")?;
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/{command}"
-            )))
+            .send(ToMinecraft::Command(format!("/{command}")))
             .ok()?;
 
         let mut embed = CreateEmbed::default();

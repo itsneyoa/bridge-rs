@@ -2,6 +2,7 @@
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -49,9 +50,7 @@ pub static KICK_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g kick {user} {reason}",
-            )))
+            .send(ToMinecraft::Command(format!("/g kick {user} {reason}",)))
             .ok()?;
 
         Some(

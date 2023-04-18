@@ -1,19 +1,20 @@
-//! Promote command
+//! Invite command
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
-/// Promote command
-pub static PROMOTE_COMMAND: Command = Command {
-    name: "promote",
-    description: "Promotes the specified user by one guild rank",
-    permissions: Permissions::MANAGE_ROLES,
+/// Invite command
+pub static INVITE_COMMAND: Command = Command {
+    name: "invite",
+    description: "Invites the specified user to the guild",
+    permissions: Permissions::KICK_MEMBERS,
     options: {
         &[CommandOption::String {
             name: "username",
-            description: "The user to promote",
+            description: "The user to invite",
             min_length: Some(1),
             max_length: Some(16),
             autocomplete: true,
@@ -34,14 +35,12 @@ pub static PROMOTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g promote {user}",
-            )))
+            .send(ToMinecraft::Command(format!("/g invite {user}",)))
             .ok()?;
 
         Some(
             embed
-                .description(format!("Promoting `{user}`"))
+                .description(format!("Inviting `{user}`"))
                 .colour(GREEN)
                 .to_owned(),
         )

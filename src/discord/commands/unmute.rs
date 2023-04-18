@@ -1,19 +1,20 @@
-//! Invite command
+//! Unmute command
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
-/// Invite command
-pub static INVITE_COMMAND: Command = Command {
-    name: "invite",
-    description: "Invites the specified user to the guild",
-    permissions: Permissions::KICK_MEMBERS,
+/// Unmute command
+pub static UNMUTE_COMMAND: Command = Command {
+    name: "unmute",
+    description: "Unmutes the specified user",
+    permissions: Permissions::MODERATE_MEMBERS,
     options: {
         &[CommandOption::String {
             name: "username",
-            description: "The user to invite",
+            description: "The user to unmute",
             min_length: Some(1),
             max_length: Some(16),
             autocomplete: true,
@@ -34,14 +35,12 @@ pub static INVITE_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g invite {user}",
-            )))
+            .send(ToMinecraft::Command(format!("/g unmute {user}",)))
             .ok()?;
 
         Some(
             embed
-                .description(format!("Inviting `{user}`"))
+                .description(format!("Unmuting `{user}`"))
                 .colour(GREEN)
                 .to_owned(),
         )

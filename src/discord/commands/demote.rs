@@ -2,6 +2,7 @@
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -34,9 +35,7 @@ pub static DEMOTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g demote {user}",
-            )))
+            .send(ToMinecraft::Command(format!("/g demote {user}",)))
             .ok()?;
 
         Some(

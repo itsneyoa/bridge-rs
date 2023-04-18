@@ -1,19 +1,20 @@
-//! Unmute command
+//! Promote command
 
 use super::super::{GREEN, RED};
 use super::{Command, CommandOption, GetOptions};
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
-/// Unmute command
-pub static UNMUTE_COMMAND: Command = Command {
-    name: "unmute",
-    description: "Unmutes the specified user",
-    permissions: Permissions::MODERATE_MEMBERS,
+/// Promote command
+pub static PROMOTE_COMMAND: Command = Command {
+    name: "promote",
+    description: "Promotes the specified user by one guild rank",
+    permissions: Permissions::MANAGE_ROLES,
     options: {
         &[CommandOption::String {
             name: "username",
-            description: "The user to unmute",
+            description: "The user to promote",
             min_length: Some(1),
             max_length: Some(16),
             autocomplete: true,
@@ -34,14 +35,12 @@ pub static UNMUTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(crate::bridge::types::ToMinecraft::Command(format!(
-                "/g unmute {user}",
-            )))
+            .send(ToMinecraft::Command(format!("/g promote {user}",)))
             .ok()?;
 
         Some(
             embed
-                .description(format!("Unmuting `{user}`"))
+                .description(format!("Promoting `{user}`"))
                 .colour(GREEN)
                 .to_owned(),
         )

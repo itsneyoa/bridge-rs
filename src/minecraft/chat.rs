@@ -1,6 +1,6 @@
 //! A set of helpers for handling chat messages
 
-use crate::bridge::{Chat, ToDiscord};
+use crate::{Chat, ToDiscord};
 use lazy_regex::{regex, Lazy, Regex};
 use regex::SubCaptureMatches;
 use std::iter::Skip;
