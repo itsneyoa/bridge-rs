@@ -4,9 +4,8 @@ mod chat;
 
 use super::{Chat, ToDiscord, ToMinecraft};
 use crate::prelude::*;
-use azalea::prelude::*;
-use azalea::{ClientInformation, JoinError};
-use flume::{Receiver, Sender};
+use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
+use flume::{Receiver, SendError, Sender};
 use tokio::{
     sync::mpsc::UnboundedReceiver,
     time::{sleep, Duration},
@@ -56,28 +55,32 @@ impl Minecraft {
         loop {
             let reason: String = match self.create_client().await {
                 Ok((client, rx)) => {
-                    let mut reason: Option<String> = None;
+                    info!("Connected to `{HOST}` as `{}`", client.profile.name);
 
-                    tokio::try_join!(
-                        self.handle_incoming_messages(self.receiver.clone(), &client),
-                        self.handle_incoming_events(rx, &client, &mut delay, &mut reason)
-                    )?;
+                    let reason = tokio::try_join!(
+                            self.handle_incoming_messages(self.receiver.clone(), &client),
+                            self.handle_incoming_events(rx, &client, || delay =
+                                Duration::from_secs(5),)
+                        )
+                    .err();
 
                     reason.unwrap_or("Unknown".into())
                 }
-                Err(err) => {
-                    if let JoinError::Disconnect { reason } = err {
-                        reason.to_string()
-                    } else {
-                        return Err(err.into());
-                    }
-                }
+                Err(err) => match err {
+                    JoinError::Disconnect { reason } => reason.to_string(),
+                    JoinError::Connection(err) => err.to_string(),
+                    _ => return Err(err.into()),
+                },
             };
 
-            println!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
-            self.uncaring_send(ToDiscord::End(reason)).await;
+            warn!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
+            self.sender
+                .send_async(ToDiscord::End(reason))
+                .await
+                .failable();
             sleep(delay).await;
-            delay += Duration::from_secs(5);
+            // Reconnect every 5 minutes at most
+            delay = (delay + Duration::from_secs(5)).min(Duration::from_secs(5 * 60));
         }
     }
 
@@ -100,9 +103,12 @@ impl Minecraft {
         &self,
         rx: Receiver<ToMinecraft>,
         client: &Client,
-    ) -> Result<()> {
+    ) -> Result<(), String> {
         while let Ok(payload) = rx.recv_async().await {
             use ToMinecraft::*;
+
+            debug!("{:?}", payload);
+
             match payload {
                 Message(author, content, chat) => {
                     let prefix = match chat {
@@ -110,7 +116,9 @@ impl Minecraft {
                         Chat::Officer => "oc",
                     };
 
-                    client.chat(&format!("/{prefix} {}: {}", author, content))
+                    let message = format!("/{prefix} {}: {}", author, content);
+
+                    client.chat(&message)
                 }
                 Command(cmd) => client.chat(&cmd),
             }
@@ -120,31 +128,42 @@ impl Minecraft {
     }
 
     /// Handle all incoming events from the Minecraft client
-    async fn handle_incoming_events(
+    async fn handle_incoming_events<T>(
         &self,
         mut rx: UnboundedReceiver<Event>,
         client: &Client,
-        delay: &mut Duration,
-        reason: &mut Option<String>,
-    ) -> Result<()> {
+        mut reset_delay: T,
+    ) -> Result<(), String>
+    where
+        T: FnMut(),
+    {
         while let Some(event) = rx.recv().await {
             use Event::*;
+
             match event {
                 Login => {
-                    *delay = Duration::from_secs(5);
-                    self.uncaring_send(ToDiscord::Start(client.profile.name.clone()))
-                        .await;
+                    reset_delay();
+                    self.sender
+                        .send_async(ToDiscord::Start(client.profile.name.clone()))
+                        .await
+                        .failable();
                 }
                 Chat(packet) => {
+                    trace!("Chat: `{}`", packet.content());
                     if let Some(msg) = chat::handle(packet.content()) {
-                        self.uncaring_send(msg).await;
+                        self.sender.send_async(msg).await.failable();
                     }
                 }
                 Packet(packet) => {
                     use azalea::protocol::packets::game::ClientboundGamePacket::*;
                     match packet.as_ref() {
-                        Disconnect(packet) => *reason = Some(packet.reason.to_string()),
-                        Respawn(_packet) => {} // Triggered when joining a new world too!
+                        Disconnect(packet) => {
+                            trace!("Disconnected: `{}`", packet.reason);
+                            return Err(packet.reason.to_string());
+                        }
+                        Respawn(_packet) => {
+                            trace!("Respawned");
+                        } // Triggered when joining a new world too!
                         _ => {}
                     }
                 }
@@ -154,9 +173,12 @@ impl Minecraft {
 
         Ok(())
     }
+}
 
-    /// Send a message to Discord over the bridge, not caring if it fails or not
-    async fn uncaring_send(&self, item: ToDiscord) {
-        let _ = self.sender.send_async(item).await;
+impl Failable for Result<(), SendError<ToDiscord>> {
+    fn failable(self) {
+        if let Err(e) = self {
+            warn!("{:?}", e);
+        }
     }
 }

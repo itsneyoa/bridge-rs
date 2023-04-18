@@ -11,19 +11,26 @@ mod bridge;
 mod errors;
 mod prelude;
 
-use bridge::create_bridge;
-use colored::Colorize;
+use bridge::Bridge;
 use dotenv::dotenv;
-use std::process::ExitCode;
+use prelude::*;
+use std::{env, process::ExitCode};
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    dotenv().ok();
+    pretty_env_logger::init();
 
-    if let Err(err) = create_bridge().await {
-        eprintln!("{}: {}", "Error".red().bold(), err);
-        return ExitCode::FAILURE;
+    // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "ERROR,bridge=DEBUG");
     }
 
-    ExitCode::SUCCESS
+    dotenv().ok();
+
+    if let Err(err) = Bridge::create().await {
+        error!("{err}");
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }

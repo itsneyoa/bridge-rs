@@ -136,7 +136,11 @@ struct Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, ctx: Context, _client: Ready) {
+    async fn ready(&self, ctx: Context, client: Ready) {
+        info!(
+            "Logged into Discord as `{}`",
+            format_args!("{}#{}", client.user.name, client.user.discriminator)
+        );
         self.channels
             .guild
             .guild_id
@@ -148,6 +152,8 @@ impl EventHandler for Handler {
         while let Ok(payload) = self.receiver.recv_async().await {
             use ToDiscord::*;
 
+            debug!("{:?}", payload);
+
             match payload {
                 Message(author, content, chat) => {
                     self.autocomplete.add_member(&author);
@@ -157,9 +163,9 @@ impl EventHandler for Handler {
                         Chat::Officer => &self.webhooks.officer,
                     };
 
-                    let _ = self
-                        .send_webhook_text(webhook, &ctx.http, &author, &content)
-                        .await;
+                    self.send_webhook_text(webhook, &ctx.http, &author, &content)
+                        .await
+                        .failable()
                 }
 
                 Start(user) => {
@@ -169,10 +175,11 @@ impl EventHandler for Handler {
                         .description(format!("Logged in as `{user}`"))
                         .colour(GREEN);
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
                         self.send_channel_embed(&ctx.http, &self.channels.officer, embed.clone())
-                    );
+                    )
+                    .failable();
 
                     state = State::Online;
                 }
@@ -184,10 +191,10 @@ impl EventHandler for Handler {
                             .author(|f| f.name("Minecraft Bot has been Disconnected"))
                             .colour(RED);
 
-                        let _ = tokio::join!(
+                        tokio::join!(
                             self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone().description("I have been disconnected from the server, attempting to reconnect").to_owned()),
                             self.send_channel_embed(&ctx.http, &self.channels.officer, embed.clone().description(format!("I have been disconnected from the server, attempting to reconnect\nReason: `{reason}`")).to_owned()),
-                        );
+                        ).failable();
                     }
 
                     state = State::Offline;
@@ -195,26 +202,26 @@ impl EventHandler for Handler {
                 Login(user) => {
                     self.autocomplete.add_member(&user);
 
-                    let _ = self
-                        .send_webhook_embed(
-                            &self.webhooks.guild,
-                            &ctx.http,
-                            &user,
-                            Embed::fake(|f| f.description(format!("{user} joined.")).colour(GREEN)),
-                        )
-                        .await;
+                    self.send_webhook_embed(
+                        &self.webhooks.guild,
+                        &ctx.http,
+                        &user,
+                        Embed::fake(|f| f.description(format!("{user} joined.")).colour(GREEN)),
+                    )
+                    .await
+                    .failable();
                 }
                 Logout(user) => {
                     self.autocomplete.add_member(&user);
 
-                    let _ = self
-                        .send_webhook_embed(
-                            &self.webhooks.guild,
-                            &ctx.http,
-                            &user,
-                            Embed::fake(|f| f.description(format!("{user} left.")).colour(RED)),
-                        )
-                        .await;
+                    self.send_webhook_embed(
+                        &self.webhooks.guild,
+                        &ctx.http,
+                        &user,
+                        Embed::fake(|f| f.description(format!("{user} left.")).colour(RED)),
+                    )
+                    .await
+                    .failable();
                 }
                 Join(user) => {
                     self.autocomplete.add_member(&user);
@@ -226,10 +233,11 @@ impl EventHandler for Handler {
                         GREEN,
                     );
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
                         self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
-                    );
+                    )
+                    .failable();
                 }
                 Leave(user) => {
                     self.autocomplete.remove_member(&user);
@@ -241,15 +249,16 @@ impl EventHandler for Handler {
                         RED,
                     );
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
                         self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
-                    );
+                    )
+                    .failable();
                 }
                 Kick(user, by) => {
                     self.autocomplete.remove_member(&user);
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
                             &self.channels.guild,
@@ -270,7 +279,8 @@ impl EventHandler for Handler {
                                 RED,
                             )
                         ),
-                    );
+                    )
+                    .failable();
                 }
                 Promotion(user, from, to) => {
                     let embed = builders::basic_embed(
@@ -278,10 +288,11 @@ impl EventHandler for Handler {
                         GREEN,
                     );
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
                         self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
-                    );
+                    )
+                    .failable();
                 }
                 Demotion(user, from, to) => {
                     let embed = builders::basic_embed(
@@ -289,37 +300,38 @@ impl EventHandler for Handler {
                         RED,
                     );
 
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(&ctx.http, &self.channels.guild, embed.clone()),
                         self.send_channel_embed(&ctx.http, &self.channels.officer, embed),
-                    );
+                    )
+                    .failable();
                 }
                 Mute(user, by, time) => {
-                    let _ = self
-                        .send_channel_embed(
-                            &ctx.http,
-                            &self.channels.officer,
-                            builders::basic_embed(
-                                format!("`{user}` has been muted for `{time}` by `{by}`").as_str(),
-                                RED,
-                            ),
-                        )
-                        .await;
+                    self.send_channel_embed(
+                        &ctx.http,
+                        &self.channels.officer,
+                        builders::basic_embed(
+                            format!("`{user}` has been muted for `{time}` by `{by}`").as_str(),
+                            RED,
+                        ),
+                    )
+                    .await
+                    .failable();
                 }
                 Unmute(user, by) => {
-                    let _ = self
-                        .send_channel_embed(
-                            &ctx.http,
-                            &self.channels.officer,
-                            builders::basic_embed(
-                                format!("`{user}` has been unmuted by `{by}`").as_str(),
-                                GREEN,
-                            ),
-                        )
-                        .await;
+                    self.send_channel_embed(
+                        &ctx.http,
+                        &self.channels.officer,
+                        builders::basic_embed(
+                            format!("`{user}` has been unmuted by `{by}`").as_str(),
+                            GREEN,
+                        ),
+                    )
+                    .await
+                    .failable();
                 }
                 GuildMute(by, time) => {
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
                             &self.channels.guild,
@@ -337,10 +349,11 @@ impl EventHandler for Handler {
                                 RED
                             )
                         )
-                    );
+                    )
+                    .failable();
                 }
                 GuildUnmute(by) => {
-                    let _ = tokio::join!(
+                    tokio::join!(
                         self.send_channel_embed(
                             &ctx.http,
                             &self.channels.guild,
@@ -354,7 +367,8 @@ impl EventHandler for Handler {
                                 GREEN
                             )
                         )
-                    );
+                    )
+                    .failable();
                 }
             }
         }
@@ -364,6 +378,8 @@ impl EventHandler for Handler {
         if msg.author.bot || msg.kind != MessageType::Regular {
             return;
         }
+
+        trace!("Message: {:?}", msg);
 
         let chat = match msg.channel_id.0 {
             id if (id == self.config.channels.guild) => Chat::Guild,
@@ -383,8 +399,16 @@ impl EventHandler for Handler {
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         use Interaction::*;
+
+        trace!("Interaction: {:?}", interaction);
+
         match interaction {
             ApplicationCommand(interaction) => {
+                debug!(
+                    "{}#{} ran {}",
+                    interaction.user.name, interaction.user.discriminator, interaction.data.name
+                );
+
                 interaction
                     .defer(&ctx.http)
                     .await
@@ -395,6 +419,8 @@ impl EventHandler for Handler {
                 {
                     executor(&interaction, self.sender.clone(), (&self.config, &ctx))
                         .unwrap_or_else(|| {
+                            warn!("Command `{}` failed", interaction.data.name);
+
                             let mut embed = CreateEmbed::default();
                             embed
                                 .description("Something went wrong while trying to run that")
@@ -428,14 +454,16 @@ impl EventHandler for Handler {
                     }
 
                     let matches = self.autocomplete.get_matches(current_value).await;
-                    let _ = interaction
+                    interaction
                         .create_autocomplete_response(&ctx.http, |f| {
                             for user in matches {
                                 f.add_string_choice(&user, &user);
                             }
                             f
                         })
-                        .await;
+                        .await
+                        .map_err(BridgeError::Discord)
+                        .failable();
                 }
             }
             _ => {}

@@ -17,6 +17,13 @@
     - `bot`
     - `applications.commands`
 
+## Log Levels
+- **Error**: Errors
+- **Warn**: Warnings
+- **Info**: General information
+- **Debug**: Specific information
+- **Trace**: All the information
+
 ## To do
 - [x] Add all guild events
 - [x] Add discord slash commands
@@ -24,5 +31,5 @@
 - [ ] Slash command autocomplete
 - [ ] Sanitise discord nicks and content
 - [ ] Online/offline messages
-- [ ] Logging
-- [ ] Clean up error handling
+- [x] Logging
+- [x] Clean up error handling

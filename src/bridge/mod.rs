@@ -23,16 +23,17 @@ pub(super) struct Bridge {
     discord: Discord,
 }
 
-/// Create and start the bridge
-pub(super) async fn create_bridge() -> Result<()> {
-    let bridge = Bridge::new().await?;
-
-    bridge.start().await?;
-
-    Ok(())
-}
-
 impl Bridge {
+    /// Create and start the bridge
+    pub(super) async fn create() -> Result<()> {
+        info!("Starting Bridge...");
+        let bridge = Self::new().await?;
+
+        bridge.start().await?;
+
+        Ok(())
+    }
+
     /// Create a new Bridge instance, setting up the [`Config`](Config) and channels
     async fn new() -> Result<Self> {
         let config = Config::new()?;

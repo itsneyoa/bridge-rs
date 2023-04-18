@@ -1,16 +1,15 @@
 //! Error types for the Bridge
 
-use colored::Colorize;
 use thiserror::Error;
 
 /// All error variants for the Bridge
 #[derive(Error, Debug)]
 pub enum BridgeError {
     /// Environment variable is missing
-    #[error("Environment variable {} is missing", .0.bold().magenta())]
+    #[error("Environment variable {0} is missing")]
     EnvMissing(String),
     /// Environment variable is invalid
-    #[error("Environment variable {} is invalid", .0.bold().magenta())]
+    #[error("Environment variable {0} is invalid")]
     EnvInvalid(String),
 
     /// Minecraft join error
@@ -23,4 +22,8 @@ pub enum BridgeError {
     /// Discord channel type error
     #[error("Discord channel invalid - {0}")]
     ChannelInvalid(String),
+
+    /// Other error
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
