@@ -5,8 +5,8 @@
 //! ```
 
 pub use crate::errors::BridgeError;
-pub use log::{debug, error, info, trace, warn};
 pub use anyhow::anyhow;
+pub use log::{debug, error, info, trace, warn};
 
 /// Result type for all functions in this crate
 pub type Result<T, E = BridgeError> = std::result::Result<T, E>;
@@ -26,7 +26,7 @@ impl<T> Failable for Result<T> {
 }
 
 /// Failable for tuples, typically returned by [`tokio::join`] when sending discord messages
-impl <T> Failable for (Result<T>, Result<T>) {
+impl<T> Failable for (Result<T>, Result<T>) {
     fn failable(self) {
         self.0.failable();
         self.1.failable();

@@ -2,10 +2,12 @@
 
 mod chat;
 
-use super::{Chat, ToDiscord, ToMinecraft};
+use super::{Chat, FromDiscord, FromMinecraft};
 use crate::prelude::*;
+use async_broadcast::{SendError, Sender};
 use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
-use flume::{Receiver, SendError, Sender};
+use flume::Receiver;
+use lazy_regex::regex_replace_all;
 use tokio::{
     sync::mpsc::UnboundedReceiver,
     time::{sleep, Duration},
@@ -24,16 +26,16 @@ pub(super) struct Minecraft {
     /// - Production: A live Microsoft account
     account: Account,
     /// The channel used to send payloads to Discord
-    sender: Sender<ToDiscord>,
+    sender: Sender<FromMinecraft>,
     /// The channel used to recieve payloads from Discord
-    receiver: Receiver<ToMinecraft>,
+    receiver: Receiver<FromDiscord>,
 }
 
 impl Minecraft {
     /// Create a new instance of [`Minecraft`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub(super) async fn new((tx, rx): (Sender<ToDiscord>, Receiver<ToMinecraft>)) -> Self {
+    pub(super) async fn new((tx, rx): (Sender<FromMinecraft>, Receiver<FromDiscord>)) -> Self {
         #[cfg(debug_assertions)]
         let account = Account::offline("Bridge");
         #[cfg(not(debug_assertions))]
@@ -75,7 +77,7 @@ impl Minecraft {
 
             warn!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
             self.sender
-                .send_async(ToDiscord::End(reason))
+                .broadcast(FromMinecraft::End(reason))
                 .await
                 .failable();
             sleep(delay).await;
@@ -101,11 +103,11 @@ impl Minecraft {
     /// Handle all incoming messages from Discord on the bridge
     async fn handle_incoming_messages(
         &self,
-        rx: Receiver<ToMinecraft>,
+        rx: Receiver<FromDiscord>,
         client: &Client,
     ) -> Result<(), String> {
         while let Ok(payload) = rx.recv_async().await {
-            use ToMinecraft::*;
+            use FromDiscord::*;
 
             debug!("{:?}", payload);
 
@@ -118,7 +120,8 @@ impl Minecraft {
 
                     let message = format!("/{prefix} {}: {}", author, content);
 
-                    client.chat(&message)
+                    trace!("`{message}`");
+                    client.chat(&message);
                 }
                 Command(cmd) => client.chat(&cmd),
             }
@@ -142,27 +145,38 @@ impl Minecraft {
 
             match event {
                 Login => {
+                    trace!("{event:?}");
                     reset_delay();
                     self.sender
-                        .send_async(ToDiscord::Start(client.profile.name.clone()))
+                        .broadcast(FromMinecraft::Start(client.profile.name.clone()))
                         .await
                         .failable();
                 }
                 Chat(packet) => {
-                    trace!("Chat: `{}`", packet.content());
-                    if let Some(msg) = chat::handle(packet.content()) {
-                        self.sender.send_async(msg).await.failable();
+                    trace!("{packet:?}");
+
+                    // Remove leading and trailing `-` characters
+                    let content =
+                        regex_replace_all!(r"^-*|-*$", &packet.content(), |_| "").to_string();
+
+                    if let Some(msg) = chat::handle(&content) {
+                        self.sender.broadcast(msg).await.failable();
                     }
+
+                    self.sender
+                        .broadcast(FromMinecraft::Raw(content))
+                        .await
+                        .failable()
                 }
                 Packet(packet) => {
                     use azalea::protocol::packets::game::ClientboundGamePacket::*;
                     match packet.as_ref() {
                         Disconnect(packet) => {
-                            trace!("Disconnected: `{}`", packet.reason);
+                            trace!("{packet:?}");
                             return Err(packet.reason.to_string());
                         }
-                        Respawn(_packet) => {
-                            trace!("Respawned");
+                        Respawn(packet) => {
+                            trace!("{packet:?}");
                         } // Triggered when joining a new world too!
                         _ => {}
                     }
@@ -175,7 +189,7 @@ impl Minecraft {
     }
 }
 
-impl Failable for Result<(), SendError<ToDiscord>> {
+impl Failable for Result<Option<FromMinecraft>, SendError<FromMinecraft>> {
     fn failable(self) {
         if let Err(e) = self {
             warn!("{:?}", e);

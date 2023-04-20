@@ -4,9 +4,10 @@ mod autocomplete;
 mod builders;
 mod commands;
 
-use super::{config::Config, types::Chat, ToDiscord, ToMinecraft};
+use super::{config::Config, types::Chat, FromDiscord, FromMinecraft};
 use crate::prelude::*;
-use flume::{Receiver, Sender};
+use async_broadcast::Receiver;
+use flume::Sender;
 use serenity::{
     async_trait,
     builder::CreateEmbed,
@@ -37,7 +38,7 @@ impl Discord {
     ///
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new(
-        (sender, receiver): (Sender<ToMinecraft>, Receiver<ToDiscord>),
+        (sender, receiver): (Sender<FromDiscord>, Receiver<FromMinecraft>),
         config: Config,
     ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
@@ -123,9 +124,9 @@ struct Handler {
     /// See [`Discord::config`]
     config: Config,
     /// The channel used to send payloads to Minecraft
-    sender: Sender<ToMinecraft>,
+    sender: Sender<FromDiscord>,
     /// The channel used to recieve payloads from Minecraft
-    receiver: Receiver<ToDiscord>,
+    receiver: Receiver<FromMinecraft>,
     /// The channels to send messages to
     channels: Destinations<GuildChannel>,
     /// The webhooks to send messages to
@@ -148,9 +149,10 @@ impl EventHandler for Handler {
             .await
             .expect("Failed to create application commands");
 
+        let mut receiver = self.receiver.clone();
         let mut state = State::Offline;
-        while let Ok(payload) = self.receiver.recv_async().await {
-            use ToDiscord::*;
+        while let Ok(payload) = receiver.recv().await {
+            use FromMinecraft::*;
 
             debug!("{:?}", payload);
 
@@ -370,6 +372,7 @@ impl EventHandler for Handler {
                     )
                     .failable();
                 }
+                Raw(_) => {}
             }
         }
     }
@@ -379,7 +382,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        trace!("Message: {:?}", msg);
+        trace!("{msg:?}");
 
         let chat = match msg.channel_id.0 {
             id if (id == self.config.channels.guild) => Chat::Guild,
@@ -388,7 +391,7 @@ impl EventHandler for Handler {
         };
 
         self.sender
-            .send_async(ToMinecraft::Message(
+            .send_async(FromDiscord::Message(
                 msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
                 msg.content,
                 chat,
@@ -400,7 +403,7 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         use Interaction::*;
 
-        trace!("Interaction: {:?}", interaction);
+        trace!("{interaction:?}");
 
         match interaction {
             ApplicationCommand(interaction) => {
@@ -417,16 +420,21 @@ impl EventHandler for Handler {
                 let embed = if let Some(executor) =
                     commands::EXECUTORS.get(interaction.data.name.as_str())
                 {
-                    executor(&interaction, self.sender.clone(), (&self.config, &ctx))
-                        .unwrap_or_else(|| {
-                            warn!("Command `{}` failed", interaction.data.name);
+                    executor(
+                        &interaction,
+                        self.sender.clone(),
+                        self.receiver.new_receiver(),
+                        (&self.config, &ctx),
+                    )
+                    .unwrap_or_else(|| {
+                        warn!("Command `{}` failed", interaction.data.name);
 
-                            let mut embed = CreateEmbed::default();
-                            embed
-                                .description("Something went wrong while trying to run that")
-                                .colour(RED)
-                                .to_owned()
-                        })
+                        let mut embed = CreateEmbed::default();
+                        embed
+                            .description("Something went wrong while trying to run that")
+                            .colour(RED)
+                            .to_owned()
+                    })
                 } else {
                     let mut embed = CreateEmbed::default();
                     embed

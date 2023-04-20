@@ -1,8 +1,8 @@
 //! Universal typings within the Bridge
 
 /// A Payload sent from Minecraft to Discord
-#[derive(Debug, PartialEq)]
-pub enum ToDiscord {
+#[derive(Debug, PartialEq, Clone)]
+pub enum FromMinecraft {
     /// A Message containing the users IGN, message content and the destination chat
     Message(String, String, Chat),
     /// The Minecraft client has sucessfully connected to the server. Contains the username of the bot
@@ -31,11 +31,13 @@ pub enum ToDiscord {
     GuildMute(String, String),
     /// Guild chat has been unmuted
     GuildUnmute(String),
+    /// Raw message content
+    Raw(String),
 }
 
 /// A Payload sent from Discord to Minecraft
 #[derive(Debug, PartialEq)]
-pub enum ToMinecraft {
+pub enum FromDiscord {
     /// A Message containing the users nickname, message content and the destination chat
     Message(String, String, Chat),
     /// A Command to be executed by the Minecraft client
@@ -43,7 +45,7 @@ pub enum ToMinecraft {
 }
 
 /// A chat which messages can be sent from and to
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Chat {
     /// Guild chat varient
     ///

@@ -1,8 +1,9 @@
 //! Promote command
 
-use super::super::{GREEN, RED};
-use super::{Command, CommandOption, GetOptions};
-use crate::ToMinecraft;
+use super::super::RED;
+use super::{replies, Command, CommandOption, GetOptions};
+use crate::{FromDiscord, FromMinecraft};
+use lazy_regex::{regex_find, regex_is_match};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -21,7 +22,7 @@ pub static PROMOTE_COMMAND: Command = Command {
             required: true,
         }]
     },
-    executor: |interaction, sender, _| {
+    executor: |interaction, sender, receiver, _| {
         let user = interaction.data.options.get_str("username")?;
         let mut embed = CreateEmbed::default();
 
@@ -35,14 +36,37 @@ pub static PROMOTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(ToMinecraft::Command(format!("/g promote {user}",)))
+            .send(FromDiscord::Command(format!("/g promote {user}",)))
             .ok()?;
 
-        Some(
-            embed
-                .description(format!("Promoting `{user}`"))
-                .colour(GREEN)
-                .to_owned(),
-        )
+        let (description, colour) = replies::get_reply(receiver, |ev| match ev {
+            FromMinecraft::Promotion(u, from, to) if u.eq_ignore_ascii_case(user) => {
+                Some(Ok(format!("`{u}` has been promoted from {from} to {to}")))
+            }
+            FromMinecraft::Raw(msg) => {
+                if let Some(u) = regex_find!(
+                        r"^(?:\\[.+?\\] )?(\w+) is already the highest rank you've created!-*$",
+                        &msg
+                    ) && user.eq_ignore_ascii_case(u){
+                        return Some(Err(format!("`{u}` is already the highest guild rank")));
+                    }
+
+                if regex_is_match!(
+                    r"^(?:You can only promote up to your own rank!|(?:\[.+?\] )?(\w+) is the guild master so can't be promoted anymore!)-*$",
+                    &msg
+                ) {
+                    return Some(Err("I don't have permission to do that".to_string()));
+                }
+
+                if let Some(reply) = replies::common::default(msg, user) {
+                    return Some(reply);
+                }
+
+                None
+            }
+            _ => None,
+        });
+
+        Some(embed.description(description).colour(colour).to_owned())
     },
 };

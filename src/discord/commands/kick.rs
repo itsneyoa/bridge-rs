@@ -1,8 +1,9 @@
 //! Kick command
 
-use super::super::{GREEN, RED};
-use super::{Command, CommandOption, GetOptions};
-use crate::ToMinecraft;
+use super::super::RED;
+use super::{replies, Command, CommandOption, GetOptions};
+use crate::prelude::warn;
+use crate::{FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -31,7 +32,7 @@ pub static KICK_COMMAND: Command = Command {
             },
         ]
     },
-    executor: |interaction, sender, _| {
+    executor: |interaction, sender, receiver, _| {
         let user = interaction.data.options.get_str("username")?;
         let reason = interaction
             .data
@@ -50,14 +51,28 @@ pub static KICK_COMMAND: Command = Command {
         }
 
         sender
-            .send(ToMinecraft::Command(format!("/g kick {user} {reason}",)))
+            .send(FromDiscord::Command(format!("/g kick {user} {reason}",)))
             .ok()?;
 
-        Some(
-            embed
-                .description(format!("Kicking `{user}`"))
-                .colour(GREEN)
-                .to_owned(),
-        )
+        let (description, colour) = replies::get_reply(receiver, |ev| match ev {
+            FromMinecraft::Kick(u, _) if u.eq_ignore_ascii_case(user) => {
+                Some(Ok(format!("`{u}` was kicked from the guild")))
+            }
+            FromMinecraft::Raw(msg) => {
+                if msg == "Invalid usage! '/guild kick <player> <reason>'" {
+                    warn!("Guild kick reason not found");
+                    return Some(Err("Missing reason".to_string()));
+                }
+
+                if let Some(reason) = replies::common::default(msg, user) {
+                    return Some(reason);
+                }
+
+                None
+            }
+            _ => None,
+        });
+
+        Some(embed.description(description).colour(colour).to_owned())
     },
 };

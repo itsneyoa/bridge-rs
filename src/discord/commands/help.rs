@@ -11,7 +11,7 @@ pub static HELP_COMMAND: Command = Command {
     description: "Shows the help menu",
     permissions: Permissions::empty(),
     options: &[],
-    executor: |_, _, (config, ctx)| {
+    executor: |_, _, _, (config, ctx)| {
         let mut embed = CreateEmbed::default();
 
         let current_user = ctx.cache.current_user();

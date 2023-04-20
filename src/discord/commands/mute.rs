@@ -1,8 +1,8 @@
 //! Mute command
 
-use super::super::{GREEN, RED};
-use super::{Command, CommandOption, GetOptions};
-use crate::ToMinecraft;
+use super::super::RED;
+use super::{replies, Command, CommandOption, GetOptions};
+use crate::{warn, FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -36,7 +36,7 @@ pub static MUTE_COMMAND: Command = Command {
             },
         ]
     },
-    executor: |interaction, sender, _| {
+    executor: |interaction, sender, receiver, _| {
         let user = interaction.data.options.get_str("username")?;
         let time = interaction.data.options.get_int("time")?;
         let period = interaction.data.options.get_choice("period")?;
@@ -52,16 +52,55 @@ pub static MUTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(ToMinecraft::Command(format!(
+            .send(FromDiscord::Command(format!(
                 "/g mute {user} {time}{period}",
             )))
             .ok()?;
 
-        Some(
-            embed
-                .description(format!("Muting `{user}` for `{time}{period}`"))
-                .colour(GREEN)
-                .to_owned(),
-        )
+        let (description, colour) = replies::get_reply(receiver, |ev| match ev {
+            FromMinecraft::Mute(u, _, t)
+                if u.eq_ignore_ascii_case(user)
+                    && t.eq_ignore_ascii_case(&format!("{time}{period}")) =>
+            {
+                Some(Ok(format!("`{u}` has been muted for `{t}`")))
+            }
+            FromMinecraft::GuildMute(_, t)
+                if t.eq_ignore_ascii_case(&format!("{time}{period}"))
+                    && user.eq_ignore_ascii_case("everyone") =>
+            {
+                Some(Ok(format!("Guild Chat has been muted for `{t}`")))
+            }
+            FromMinecraft::Raw(msg) => {
+                if msg == "This player is already muted!" {
+                    return Some(Err("This player is already muted".to_string()));
+                }
+
+                if msg == "You cannot mute a guild member with a higher guild rank!" {
+                    return Some(Err("I don't have permission to do that".to_string()));
+                }
+
+                if msg == "You cannot mute someone for more than one month" {
+                    return Some(Err("Mute length too long".to_string()));
+                }
+
+                if msg == "You cannot mute someone for less than a minute" {
+                    return Some(Err("Mute length too short".to_string()));
+                }
+
+                if msg == "Invalid time format! Try 7d, 1d, 6h, 1h" {
+                    warn!("Invalid mute length");
+                    return Some(Err("Invalid mute length".to_string()));
+                }
+
+                if let Some(reply) = replies::common::default(msg, user) {
+                    return Some(reply);
+                }
+
+                None
+            }
+            _ => None,
+        });
+
+        Some(embed.description(description).colour(colour).to_owned())
     },
 };

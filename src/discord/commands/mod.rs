@@ -1,7 +1,12 @@
 //! Discord commands
 
-use crate::{config::Config, types::ToMinecraft};
+use crate::{
+    config::Config,
+    types::{FromDiscord, FromMinecraft},
+};
+use async_broadcast::Receiver;
 use flume::Sender;
+use futures::executor::block_on;
 use serenity::{
     builder::{
         CreateApplicationCommand, CreateApplicationCommandOption, CreateApplicationCommands,
@@ -16,7 +21,7 @@ use serenity::{
     },
     prelude::Context,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 pub mod demote;
 pub mod execute;
@@ -58,7 +63,8 @@ lazy_static::lazy_static! {
 /// Command executor
 type Executor = fn(
     &ApplicationCommandInteraction,
-    Sender<ToMinecraft>,
+    Sender<FromDiscord>,
+    Receiver<FromMinecraft>,
     (&Config, &Context),
 ) -> Option<CreateEmbed>;
 
@@ -269,5 +275,147 @@ impl GetOptions for Vec<CommandDataOption> {
 
     fn get_choice(&self, name: &'static str) -> Option<&str> {
         self.get_option(name)?.as_str()
+    }
+}
+
+/// Module for getting feedback from the minecraft client for slash commands
+mod replies {
+    use super::*;
+    use crate::discord::{GREEN, RED};
+    use serenity::utils::Colour;
+
+    /// The type returned by the [`get_reply`] function
+    ///
+    /// - [`Some(Ok(_))`] means the reply was found, and the command was successful
+    /// - [`Some(Err(_))`] means the reply was found, but the command failed
+    /// - [`None`] means the reply was not found
+    type Value = Option<Result<String, String>>;
+
+    /// How long to wait for a minecraft reply before giving up
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Get a reply from the minecraft client, or give up if the [`TIMEOUT`] is reached
+    pub fn get_reply<F>(receiver: Receiver<FromMinecraft>, handler: F) -> (String, Colour)
+    where
+        F: Fn(FromMinecraft) -> Value,
+    {
+        match block_on(async {
+            tokio::select! {
+                biased;
+                res = events(receiver, handler) => res,
+                _ = tokio::time::sleep(TIMEOUT) => Some(Err(format!("Response not found after `{TIMEOUT:?}`"))),
+            }
+            .unwrap_or_else(|| Err("Something went wrong".to_string()))
+        }) {
+            Ok(description) => (description, GREEN),
+            Err(description) => (description, RED),
+        }
+    }
+
+    /// Get a reply from the minecraft client
+    async fn events<F>(mut rx: Receiver<FromMinecraft>, handler: F) -> Value
+    where
+        F: Fn(FromMinecraft) -> Value,
+    {
+        while let Ok(payload) = rx.recv().await {
+            if let Some(result) = handler(payload) {
+                return Some(result);
+            }
+        }
+
+        None
+    }
+
+    /// Handlers for replies which are common to multiple commands
+    pub mod common {
+        use super::*;
+        use lazy_regex::regex_find;
+        use log::warn;
+
+        /// Handler for if the targeted user is not in the guild
+        fn not_in_guild(message: &str, user: &str) -> Value {
+            if let Some(u) = regex_find!(r"^(?:\[.+?\] )?(\w+) is not in your guild!$", message) && user.eq_ignore_ascii_case(u) {
+                Some(Err(format!("`{u}` is not in the guild")))
+            } else {
+                None
+            }
+        }
+
+        /// Handler for if the targeted player does not exist
+        fn player_not_found(message: &str, user: &str) -> Value {
+            if let Some(u) = regex_find!(r"^Can't find a player by the name of '(\w+)'$", message) && u.eq_ignore_ascii_case(user) {
+                Some(Err(format!("Could not find player `{u}`")))
+            } else {
+                None
+            }
+        }
+
+        /// All the messages which can be returned to indicate no permission
+        const NO_PERMISSION_MESSAGES: [&str;3] = [
+            "You must be the Guild Master to use that command!",
+            "You do not have permission to use this command!",
+            "I'm sorry, but you do not have permission to perform this command. Please contact the server administrators if you believe that this is in error.",
+        ];
+
+        /// Handler for if the current bot user does not have permission to use the command
+        fn no_permission(message: &str) -> Value {
+            if NO_PERMISSION_MESSAGES.contains(&message.trim()) {
+                Some(Err(
+                    "I don't have permission to run that command".to_string()
+                ))
+            } else {
+                None
+            }
+        }
+
+        /// All the messages which can be returned to indicate an unknown command
+        const UNKNOWN_COMMAND_MESSAGES: [&str; 2] = [
+            "Unknown command. Type \"/help\" for help.",
+            "Unknown or incomplete command, see below for error",
+        ];
+
+        /// Handler for if the command is unknown
+        fn unknown_command(message: &str) -> Value {
+            if UNKNOWN_COMMAND_MESSAGES.contains(&message) {
+                warn!("Unknown command");
+                Some(Err("Unknown command".to_string()))
+            } else {
+                None
+            }
+        }
+
+        /// Handler for if the command is disabled        
+        fn disabled_command(message: &str) -> Value {
+            if message == "This command is currently disabled." {
+                Some(Err("This command is currently disabled".to_string()))
+            } else {
+                None
+            }
+        }
+
+        /// Handler for replies which are common to multiple commands
+        pub fn default(message: String, user: &str) -> Value {
+            if let Some(result) = not_in_guild(&message, user) {
+                return Some(result);
+            }
+
+            if let Some(result) = player_not_found(&message, user) {
+                return Some(result);
+            }
+
+            if let Some(result) = no_permission(&message) {
+                return Some(result);
+            }
+
+            if let Some(result) = unknown_command(&message) {
+                return Some(result);
+            }
+
+            if let Some(result) = disabled_command(&message) {
+                return Some(result);
+            }
+
+            None
+        }
     }
 }

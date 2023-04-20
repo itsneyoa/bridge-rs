@@ -27,9 +27,12 @@
 ## To do
 - [x] Add all guild events
 - [x] Add discord slash commands
-- [ ] Slash command replies
-- [ ] Slash command autocomplete
+- [x] Slash command replies
+- [x] Slash command autocomplete
 - [ ] Sanitise discord nicks and content
 - [ ] Online/offline messages
-- [x] Logging
+- [x] Console Logging
+- [ ] Discord Logging
 - [x] Clean up error handling
+- [ ] Chat message feedback (emojis)
+- [ ] Command retries for `You are sending commands too fast!`

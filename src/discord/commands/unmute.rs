@@ -1,8 +1,8 @@
 //! Unmute command
 
-use super::super::{GREEN, RED};
-use super::{Command, CommandOption, GetOptions};
-use crate::ToMinecraft;
+use super::super::RED;
+use super::{replies, Command, CommandOption, GetOptions};
+use crate::{FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -21,7 +21,7 @@ pub static UNMUTE_COMMAND: Command = Command {
             required: true,
         }]
     },
-    executor: |interaction, sender, _| {
+    executor: |interaction, sender, receiver, _| {
         let user = interaction.data.options.get_str("username")?;
         let mut embed = CreateEmbed::default();
 
@@ -35,14 +35,30 @@ pub static UNMUTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(ToMinecraft::Command(format!("/g unmute {user}",)))
+            .send(FromDiscord::Command(format!("/g unmute {user}",)))
             .ok()?;
 
-        Some(
-            embed
-                .description(format!("Unmuting `{user}`"))
-                .colour(GREEN)
-                .to_owned(),
-        )
+        let (description, colour) = replies::get_reply(receiver, |ev| match ev {
+            FromMinecraft::Unmute(u, _) if u.eq_ignore_ascii_case(user) => {
+                Some(Ok(format!("`{u}` has been unmuted")))
+            }
+            FromMinecraft::GuildUnmute(_) if user.eq_ignore_ascii_case("everyone") => {
+                Some(Ok("Guild Chat has been unmuted".to_string()))
+            }
+            FromMinecraft::Raw(msg) => {
+                if msg == "This player is not muted!" {
+                    return Some(Err("This player is not muted".to_string()));
+                }
+
+                if let Some(reply) = replies::common::default(msg, user) {
+                    return Some(reply);
+                }
+
+                None
+            }
+            _ => None,
+        });
+
+        Some(embed.description(description).colour(colour).to_owned())
     },
 };
