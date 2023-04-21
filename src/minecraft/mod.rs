@@ -77,7 +77,7 @@ impl Minecraft {
 
             warn!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
             self.sender
-                .broadcast(FromMinecraft::End(reason))
+                .broadcast(FromMinecraft::Disconnect(reason))
                 .await
                 .failable();
             sleep(delay).await;
@@ -88,7 +88,9 @@ impl Minecraft {
 
     /// Create a Minecraft client, and set the render distance to the minimum (2)
     async fn create_client(&self) -> Result<(Client, UnboundedReceiver<Event>), JoinError> {
+        debug!("a");
         let (client, rx) = Client::join(&self.account, HOST).await?;
+        debug!("b");
 
         client
             .set_client_information(ClientInformation {
@@ -97,6 +99,7 @@ impl Minecraft {
             })
             .await?;
 
+        debug!("c");
         Ok((client, rx))
     }
 
@@ -148,7 +151,7 @@ impl Minecraft {
                     trace!("{event:?}");
                     reset_delay();
                     self.sender
-                        .broadcast(FromMinecraft::Start(client.profile.name.clone()))
+                        .broadcast(FromMinecraft::Connect(client.profile.name.clone()))
                         .await
                         .failable();
                 }

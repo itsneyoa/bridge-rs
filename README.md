@@ -1,5 +1,7 @@
 # Bridge
 
+> 🛑 This is not usable yet - see [To Do](#to-do)
+
 > ⚠️ Hypixel has historically banned accounts running bot software as Azalea is not a regular client. Use at your own risk!
 
 ## Deploying
@@ -17,20 +19,13 @@
     - `bot`
     - `applications.commands`
 
-## Log Levels
-- **Error**: Errors
-- **Warn**: Warnings
-- **Info**: General information
-- **Debug**: Specific information
-- **Trace**: All the information
-
 ## To do
 - [x] Add all guild events
 - [x] Add discord slash commands
 - [x] Slash command replies
 - [x] Slash command autocomplete
 - [ ] Sanitise discord nicks and content
-- [ ] Online/offline messages
+- [x] Online/offline messages
 - [x] Console Logging
 - [ ] Discord Logging
 - [x] Clean up error handling

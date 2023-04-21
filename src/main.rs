@@ -20,11 +20,26 @@ use discord::Discord;
 use dotenv::dotenv;
 use minecraft::Minecraft;
 use prelude::*;
-use std::{env, process::ExitCode};
+use std::{
+    env,
+    process::ExitCode,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use types::*;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let running = Arc::new(AtomicBool::new(true));
+
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Failed to set Ctrl-C handler");
+
     // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "ERROR,bridge=DEBUG");
@@ -34,11 +49,16 @@ async fn main() -> ExitCode {
 
     dotenv().ok();
 
-    if let Err(err) = Bridge::create().await {
-        error!("{err}");
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
+    match Bridge::create(running).await {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(BridgeError::SigInt) => {
+            info!("Shutting down...");
+            ExitCode::from(130)
+        }
+        Err(err) => {
+            error!("{err}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -52,11 +72,11 @@ struct Bridge {
 
 impl Bridge {
     /// Create and start the bridge
-    pub async fn create() -> Result<()> {
+    pub async fn create(running: Arc<AtomicBool>) -> Result<()> {
         info!("Starting Bridge...");
         let bridge = Self::new().await?;
 
-        bridge.start().await?;
+        bridge.start(running).await?;
 
         Ok(())
     }
@@ -75,9 +95,19 @@ impl Bridge {
     }
 
     /// Start both halves of the Bridge
-    async fn start(self) -> Result<()> {
-        tokio::try_join!(self.discord.start(), self.minecraft.start())?;
+    async fn start(self, running: Arc<AtomicBool>) -> Result<()> {
+        tokio::try_join!(
+            self.discord.start(),
+            self.minecraft.start(),
+            Self::watch_for_sigint(running),
+        )?;
 
         Ok(())
+    }
+
+    /// Watch for a SIGINT and return an error if one is received
+    async fn watch_for_sigint(running: Arc<AtomicBool>) -> Result<()> {
+        while running.load(Ordering::SeqCst) {}
+        Err(BridgeError::SigInt)
     }
 }

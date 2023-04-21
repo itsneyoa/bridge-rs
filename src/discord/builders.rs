@@ -27,3 +27,9 @@ pub(super) fn basic_embed(description: &str, colour: Colour) -> CreateEmbed {
     let mut embed = CreateEmbed::default();
     embed.description(description).colour(colour).to_owned()
 }
+
+/// Basic embed, with just a title and colour
+pub(super) fn title_embed(title: &str, colour: Colour) -> CreateEmbed {
+    let mut embed = CreateEmbed::default();
+    embed.author(|f| f.name(title)).colour(colour).to_owned()
+}

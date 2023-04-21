@@ -23,6 +23,10 @@ pub enum BridgeError {
     #[error("Discord channel invalid - {0}")]
     ChannelInvalid(String),
 
+    /// SIGINT - User pressed Ctrl-C
+    #[error("SIGINT")]
+    SigInt,
+
     /// Other error
     #[error(transparent)]
     Other(#[from] anyhow::Error),

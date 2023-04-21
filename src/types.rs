@@ -6,9 +6,9 @@ pub enum FromMinecraft {
     /// A Message containing the users IGN, message content and the destination chat
     Message(String, String, Chat),
     /// The Minecraft client has sucessfully connected to the server. Contains the username of the bot
-    Start(String),
+    Connect(String),
     /// The Minecraft client has been disconnected from the server. Contains the reason for the disconnect
-    End(String),
+    Disconnect(String),
     /// A Guild Member logged in to Hypixel
     Login(String),
     /// A Guild Member logged out of Hypixel

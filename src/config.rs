@@ -5,7 +5,7 @@ use crate::prelude::*;
 use std::env;
 
 /// The configuration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// ENV `DISCORD_TOKEN`
     pub token: String,
@@ -22,7 +22,7 @@ pub struct Config {
 }
 
 /// The different channels for the [`chats`](super::types::Chat)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConfigChannels {
     /// ENV `GUILD_CHANNEL_ID`
     pub guild: u64,
