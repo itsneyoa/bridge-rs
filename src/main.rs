@@ -5,8 +5,11 @@
     clippy::doc_markdown,
     clippy::tabs_in_doc_comments,
     missing_docs,
-    clippy::missing_docs_in_private_items
+    clippy::missing_docs_in_private_items,
+    missing_debug_implementations,
+    clippy::unwrap_used
 )]
+#![deny(missing_debug_implementations)]
 
 mod config;
 mod discord;
@@ -20,25 +23,18 @@ use discord::Discord;
 use dotenv::dotenv;
 use minecraft::Minecraft;
 use prelude::*;
-use std::{
-    env,
-    process::ExitCode,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{env, process::ExitCode, sync::Arc};
+use tokio::sync::Notify;
 use types::*;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let running = Arc::new(AtomicBool::new(true));
+    let notify = Arc::new(Notify::new());
 
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    })
-    .expect("Failed to set Ctrl-C handler");
+    {
+        let notify = notify.clone();
+        ctrlc::set_handler(move || notify.notify_one()).expect("Failed to set Ctrl-C handler");
+    }
 
     // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
     if env::var("RUST_LOG").is_err() {
@@ -49,7 +45,7 @@ async fn main() -> ExitCode {
 
     dotenv().ok();
 
-    match Bridge::create(running).await {
+    match Bridge::create(notify).await {
         Ok(_) => ExitCode::SUCCESS,
         Err(BridgeError::SigInt) => {
             info!("Shutting down...");
@@ -72,11 +68,11 @@ struct Bridge {
 
 impl Bridge {
     /// Create and start the bridge
-    pub async fn create(running: Arc<AtomicBool>) -> Result<()> {
+    pub async fn create(notify: Arc<Notify>) -> Result<()> {
         info!("Starting Bridge...");
         let bridge = Self::new().await?;
 
-        bridge.start(running).await?;
+        bridge.start(notify).await?;
 
         Ok(())
     }
@@ -95,19 +91,12 @@ impl Bridge {
     }
 
     /// Start both halves of the Bridge
-    async fn start(self, running: Arc<AtomicBool>) -> Result<()> {
-        tokio::try_join!(
-            self.discord.start(),
-            self.minecraft.start(),
-            Self::watch_for_sigint(running),
-        )?;
+    async fn start(self, notify: Arc<Notify>) -> Result<()> {
+        tokio::try_join!(self.discord.start(), self.minecraft.start(), async {
+            notify.notified().await;
+            Err(BridgeError::SigInt) as Result<()>
+        })?;
 
         Ok(())
-    }
-
-    /// Watch for a SIGINT and return an error if one is received
-    async fn watch_for_sigint(running: Arc<AtomicBool>) -> Result<()> {
-        while running.load(Ordering::SeqCst) {}
-        Err(BridgeError::SigInt)
     }
 }

@@ -354,7 +354,8 @@ impl EventHandler for Handler {
                 interaction
                     .edit_original_interaction_response(&ctx.http, |f| f.set_embed(embed))
                     .await
-                    .unwrap();
+                    .map_err(BridgeError::Discord)
+                    .failable();
             }
             Autocomplete(interaction) => {
                 if let Some(field) = interaction.data.options.iter().find(|e| e.focused) {
@@ -477,4 +478,12 @@ enum State {
     ///
     /// The next status message that should be sent is for [`Self::Online`]
     Offline,
+}
+
+/// Failable for tuples, typically returned by [`tokio::join`] when sending discord messages
+impl<T> Failable for (Result<T>, Result<T>) {
+    fn failable(self) {
+        self.0.failable();
+        self.1.failable();
+    }
 }

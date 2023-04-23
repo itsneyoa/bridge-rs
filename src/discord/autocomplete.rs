@@ -26,17 +26,17 @@ impl Autocomplete {
 
     /// Add a guild member to the members list
     pub(super) fn add_member(&self, member: &str) {
-        self.members.lock().unwrap().insert(member.to_string());
+        self.members.lock().expect("Failed to acquire members lock").insert(member.to_string());
     }
 
     /// Remove a guild member from the members list
     pub(super) fn remove_member(&self, member: &str) {
-        self.members.lock().unwrap().remove(member);
+        self.members.lock().expect("Failed to acquire members lock").remove(member);
     }
 
     /// Get the top 25 matches for the current input
     pub(super) async fn get_matches(&self, current: &str) -> Vec<String> {
-        let members = self.members.lock().unwrap();
+        let members = self.members.lock().expect("Failed to acquire members lock");
         let mut matches = SortedSet::with_capacity(members.len());
 
         for member in members.iter() {

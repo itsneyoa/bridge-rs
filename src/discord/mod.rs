@@ -4,6 +4,7 @@ mod autocomplete;
 mod builders;
 mod commands;
 mod handler;
+mod emojis;
 
 use super::{config::Config, FromDiscord, FromMinecraft};
 use crate::prelude::*;
@@ -107,7 +108,9 @@ impl Discord {
                         .create_webhook_with_avatar(
                             http,
                             "Bridge",
-                            AttachmentType::Image(Url::parse(&url).unwrap()),
+                            AttachmentType::Image(
+                                Url::parse(&url).expect("Failed to parse avatar URL"),
+                            ),
                         )
                         .await
                 }

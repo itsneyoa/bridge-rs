@@ -88,9 +88,7 @@ impl Minecraft {
 
     /// Create a Minecraft client, and set the render distance to the minimum (2)
     async fn create_client(&self) -> Result<(Client, UnboundedReceiver<Event>), JoinError> {
-        debug!("a");
         let (client, rx) = Client::join(&self.account, HOST).await?;
-        debug!("b");
 
         client
             .set_client_information(ClientInformation {
@@ -99,7 +97,6 @@ impl Minecraft {
             })
             .await?;
 
-        debug!("c");
         Ok((client, rx))
     }
 

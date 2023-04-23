@@ -31,3 +31,4 @@
 - [x] Clean up error handling
 - [ ] Chat message feedback (emojis)
 - [ ] Command retries for `You are sending commands too fast!`
+- [ ] New threads for each Minecraft event

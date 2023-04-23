@@ -24,11 +24,3 @@ impl<T> Failable for Result<T> {
         }
     }
 }
-
-/// Failable for tuples, typically returned by [`tokio::join`] when sending discord messages
-impl<T> Failable for (Result<T>, Result<T>) {
-    fn failable(self) {
-        self.0.failable();
-        self.1.failable();
-    }
-}

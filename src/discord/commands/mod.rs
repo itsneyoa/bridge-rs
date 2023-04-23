@@ -69,6 +69,7 @@ type Executor = fn(
 ) -> Option<CreateEmbed>;
 
 /// Command
+#[derive(Debug)]
 pub struct Command {
     /// The command name
     name: &'static str,
@@ -124,6 +125,7 @@ impl Register for HashMap<&'static str, Executor> {
 }
 
 /// Command Options
+#[derive(Debug)]
 enum CommandOption {
     /// A String command
     String {
@@ -292,7 +294,7 @@ mod replies {
     type Value = Option<Result<String, String>>;
 
     /// How long to wait for a minecraft reply before giving up
-    const TIMEOUT: Duration = Duration::from_secs(5);
+    const TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Get a reply from the minecraft client, or give up if the [`TIMEOUT`] is reached
     pub fn get_reply<F>(receiver: Receiver<FromMinecraft>, handler: F) -> (String, Colour)
