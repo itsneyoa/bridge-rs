@@ -36,7 +36,7 @@ pub static PROMOTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(FromDiscord::Command(format!("/g promote {user}",)))
+            .send(FromDiscord(format!("g promote {user}",)))
             .ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| match ev {

@@ -24,7 +24,7 @@
 - [x] Add discord slash commands
 - [x] Slash command replies
 - [x] Slash command autocomplete
-- [ ] Sanitise discord nicks and content
+- [x] Sanitise discord nicks and content
 - [x] Online/offline messages
 - [x] Console Logging
 - [ ] Discord Logging

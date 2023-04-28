@@ -2,8 +2,8 @@
 
 mod chat;
 
-use super::{Chat, FromDiscord, FromMinecraft};
 use crate::prelude::*;
+use crate::{FromDiscord, FromMinecraft};
 use async_broadcast::{SendError, Sender};
 use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
 use flume::Receiver;
@@ -14,10 +14,11 @@ use tokio::{
 };
 
 /// The server that should be joined by the bot
-#[cfg(debug_assertions)]
-const HOST: &str = "localhost";
-#[cfg(not(debug_assertions))]
-const HOST: &str = "mc.hypixel.io";
+const HOST: &str = if cfg!(debug_assertions) {
+    "localhost"
+} else {
+    "mc.hypixel.io"
+};
 
 /// The Minecraft structure
 pub(super) struct Minecraft {
@@ -36,12 +37,13 @@ impl Minecraft {
     ///
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new((tx, rx): (Sender<FromMinecraft>, Receiver<FromDiscord>)) -> Self {
-        #[cfg(debug_assertions)]
-        let account = Account::offline("Bridge");
-        #[cfg(not(debug_assertions))]
-        let account = Account::microsoft("")
-            .await
-            .expect("Could not log in with Microsoft");
+        let account = if cfg!(debug_assertions) {
+            Account::offline("Bridge")
+        } else {
+            Account::microsoft("")
+                .await
+                .expect("Could not log in with Microsoft")
+        };
 
         Self {
             account,
@@ -60,10 +62,9 @@ impl Minecraft {
                     info!("Connected to `{HOST}` as `{}`", client.profile.name);
 
                     let reason = tokio::try_join!(
-                            self.handle_incoming_messages(self.receiver.clone(), &client),
-                            self.handle_incoming_events(rx, &client, || delay =
-                                Duration::from_secs(5),)
-                        )
+                        self.handle_incoming_messages(self.receiver.clone(), &client),
+                        self.handle_incoming_events(rx, &client, || delay = Duration::from_secs(5))
+                    )
                     .err();
 
                     reason.unwrap_or("Unknown".into())
@@ -107,24 +108,15 @@ impl Minecraft {
         client: &Client,
     ) -> Result<(), String> {
         while let Ok(payload) = rx.recv_async().await {
-            use FromDiscord::*;
-
             debug!("{:?}", payload);
 
-            match payload {
-                Message(author, content, chat) => {
-                    let prefix = match chat {
-                        Chat::Guild => "gc",
-                        Chat::Officer => "oc",
-                    };
+            let message = payload.0;
 
-                    let message = format!("/{prefix} {}: {}", author, content);
+            trace!("`{message}`");
+            client.unchecked_send_command_packet(message);
 
-                    trace!("`{message}`");
-                    client.chat(&message);
-                }
-                Command(cmd) => client.chat(&cmd),
-            }
+            // How long to wait between sending commands
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
         Ok(())
@@ -168,16 +160,32 @@ impl Minecraft {
                         .await
                         .failable()
                 }
+                Death(_packet) => {
+                    use azalea::protocol::packets::game::{
+                        serverbound_client_command_packet::Action::PerformRespawn,
+                        serverbound_client_command_packet::ServerboundClientCommandPacket,
+                    };
+
+                    client.write_packet(
+                        ServerboundClientCommandPacket {
+                            action: PerformRespawn,
+                        }
+                        .get(),
+                    );
+                }
                 Packet(packet) => {
                     use azalea::protocol::packets::game::ClientboundGamePacket::*;
+
                     match packet.as_ref() {
                         Disconnect(packet) => {
                             trace!("{packet:?}");
                             return Err(packet.reason.to_string());
                         }
                         Respawn(packet) => {
-                            trace!("{packet:?}");
-                        } // Triggered when joining a new world too!
+                            if packet.data_to_keep == 1 {
+                                info!("new wld join!");
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -194,5 +202,34 @@ impl Failable for Result<Option<FromMinecraft>, SendError<FromMinecraft>> {
         if let Err(e) = self {
             warn!("{:?}", e);
         }
+    }
+}
+
+/// Send a Minecraft chat message **without** azalea sanitising it
+trait UncheckedSend {
+    /// Send a message to the Minecraft server
+    fn unchecked_send_command_packet(&self, message: impl Into<String>);
+}
+
+impl UncheckedSend for Client {
+    fn unchecked_send_command_packet(&self, message: impl Into<String>) {
+        use azalea::protocol::packets::game::serverbound_chat_command_packet::ServerboundChatCommandPacket;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        self.write_packet(
+            ServerboundChatCommandPacket {
+                command: message.into(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time shouldn't be before epoch")
+                    .as_millis()
+                    .try_into()
+                    .expect("Instant should fit into a u64"),
+                salt: rand::random(),
+                last_seen_messages: Default::default(),
+                argument_signatures: vec![],
+            }
+            .get(),
+        );
     }
 }

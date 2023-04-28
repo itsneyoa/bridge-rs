@@ -1,4 +1,4 @@
-//! A set of helpers for handling chat messages
+//! Mappings of regex matches to functions which convert them into [`ToDiscord`] payloads
 
 use crate::{Chat, FromMinecraft};
 use lazy_regex::{regex, Lazy, Regex};
@@ -6,10 +6,10 @@ use regex::SubCaptureMatches;
 use std::iter::Skip;
 
 /// A closure to execute based on the matches of the regex in [`EXECUTORS`]
-type Executor = fn(Skip<SubCaptureMatches>) -> Option<FromMinecraft>;
+pub(super) type Executor = fn(Skip<SubCaptureMatches>) -> Option<FromMinecraft>;
 
 /// Array mapping all the possible chat regex matches that we care about to [`Executor`] functions which convert them into a [`ToDiscord`] payload
-static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
+pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
     // TODO: Improve ordering of this from most used to least
     // TODO: locraw parse
     (
@@ -158,28 +158,9 @@ static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
     ),
 ];
 
-/// Handle an incoming chat message
-///
-/// If the message is of interest (i.e. contained in [`regex`]) return the payload to send to Discord
-pub(super) fn handle(message: &str) -> Option<FromMinecraft> {
-    // Messages like -------
-    if regex!(r"&-+$").is_match(message) {
-        return None;
-    }
-
-    for (regex, executor) in EXECUTORS {
-        if let Some(captures) = regex.captures_iter(message).next() {
-            if let Some(payload) = executor(captures.iter().skip(1)) {
-                return Some(payload);
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::handle;
     use super::*;
     use test_case::test_case;
 

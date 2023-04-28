@@ -34,9 +34,7 @@ pub static UNMUTE_COMMAND: Command = Command {
             );
         }
 
-        sender
-            .send(FromDiscord::Command(format!("/g unmute {user}",)))
-            .ok()?;
+        sender.send(FromDiscord(format!("g unmute {user}",))).ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| match ev {
             FromMinecraft::Unmute(u, _) if u.eq_ignore_ascii_case(user) => {

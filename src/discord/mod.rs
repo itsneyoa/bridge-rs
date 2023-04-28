@@ -4,7 +4,6 @@ mod autocomplete;
 mod builders;
 mod commands;
 mod handler;
-mod emojis;
 
 use super::{config::Config, FromDiscord, FromMinecraft};
 use crate::prelude::*;
@@ -131,6 +130,12 @@ struct Destinations<T> {
 
 impl Drop for Discord {
     fn drop(&mut self) {
-        block_on(self.handler.stop(self.client.cache_and_http.http.clone()))
+        block_on(async {
+            tokio::select! {
+                biased;
+                _ = self.handler.stop(self.client.cache_and_http.http.clone()) => {},
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+            }
+        })
     }
 }

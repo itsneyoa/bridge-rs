@@ -35,9 +35,7 @@ pub static INVITE_COMMAND: Command = Command {
             );
         }
 
-        sender
-            .send(FromDiscord::Command(format!("/g invite {user}",)))
-            .ok()?;
+        sender.send(FromDiscord(format!("g invite {user}",))).ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| {
             if let FromMinecraft::Raw(msg) = ev {

@@ -35,9 +35,7 @@ pub static DEMOTE_COMMAND: Command = Command {
             );
         }
 
-        sender
-            .send(FromDiscord::Command(format!("/g demote {user}",)))
-            .ok()?;
+        sender.send(FromDiscord(format!("g demote {user}"))).ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| match ev {
             FromMinecraft::Demotion(u, from, to) if u.eq_ignore_ascii_case(user) => {

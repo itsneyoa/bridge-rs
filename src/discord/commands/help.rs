@@ -14,21 +14,25 @@ pub static HELP_COMMAND: Command = Command {
     executor: |_, _, _, (config, ctx)| {
         let mut embed = CreateEmbed::default();
 
-        let current_user = ctx.cache.current_user();
-
         let embed = embed
             .author(|f| {
-                f.name("Bridge Help");
-                if let Some(url) = current_user.avatar_url() {
-                    f.icon_url(url);
-                };
-                f
+                f.name("Bridge Help")
+                    .icon_url(ctx.cache.current_user().face())
             })
             .field(
                 "Discord Commands",
                 super::get_commands()
                     .into_iter()
                     .map(|cmd| format!("`{}` - {}", cmd.name, cmd.description))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                false,
+            )
+            .field(
+                "Emojis",
+                crate::sanitiser::DIRT_VARIENTS
+                    .iter()
+                    .map(|dirt| format!("`{}`: {}", dirt.emoji(), dirt.description()))
                     .collect::<Vec<_>>()
                     .join("\n"),
                 false,

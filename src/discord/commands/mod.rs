@@ -2,7 +2,7 @@
 
 use crate::{
     config::Config,
-    types::{FromDiscord, FromMinecraft},
+    {FromDiscord, FromMinecraft},
 };
 use async_broadcast::Receiver;
 use flume::Sender;
@@ -107,7 +107,13 @@ pub fn register_commands(f: &mut CreateApplicationCommands) -> &mut CreateApplic
     f.set_application_commands(
         get_commands()
             .into_iter()
-            .map(CreateApplicationCommand::from)
+            .map(|x| {
+                let mut command = CreateApplicationCommand::from(x);
+                if cfg!(debug_assertions) {
+                    command.description(format!("{} (debug)", x.description));
+                }
+                command
+            })
             .collect(),
     )
 }

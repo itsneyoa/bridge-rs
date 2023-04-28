@@ -13,10 +13,8 @@
 
 mod config;
 mod discord;
-mod errors;
 mod minecraft;
 mod prelude;
-mod types;
 
 use config::Config;
 use discord::Discord;
@@ -25,7 +23,6 @@ use minecraft::Minecraft;
 use prelude::*;
 use std::{env, process::ExitCode, sync::Arc};
 use tokio::sync::Notify;
-use types::*;
 
 #[tokio::main]
 async fn main() -> ExitCode {

@@ -2,7 +2,7 @@
 
 use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN, RED};
 use crate::prelude::*;
-use crate::{Chat, Config, FromDiscord, FromMinecraft};
+use crate::{sanitiser::Sanitise, Config, Failable};
 use async_broadcast::Receiver;
 use flume::Sender;
 use log::*;
@@ -295,12 +295,29 @@ impl EventHandler for Handler {
             _ => return,
         };
 
+        let prefix = match chat {
+            Chat::Guild => "gc",
+            Chat::Officer => "oc",
+        };
+
+        let (message, dirt) = format!(
+            "{prefix} {}: {}",
+            msg.author_nick(&ctx.http)
+                .await
+                .unwrap_or(msg.author.name.clone()),
+            msg.content
+        )
+        .sanitise();
+
+        for dirt in dirt {
+            msg.react(&ctx.http, ReactionType::Unicode(dirt.emoji().to_string()))
+                .await
+                .map_err(|e| e.into())
+                .failable();
+        }
+
         self.sender
-            .send_async(FromDiscord::Message(
-                msg.author_nick(&ctx.http).await.unwrap_or(msg.author.name),
-                msg.content,
-                chat,
-            ))
+            .send_async(FromDiscord(message))
             .await
             .expect("Failed to send discord message to minecraft");
     }

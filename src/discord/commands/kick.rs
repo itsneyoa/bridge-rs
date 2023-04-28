@@ -51,7 +51,7 @@ pub static KICK_COMMAND: Command = Command {
         }
 
         sender
-            .send(FromDiscord::Command(format!("/g kick {user} {reason}",)))
+            .send(FromDiscord(format!("g kick {user} {reason}",)))
             .ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| match ev {

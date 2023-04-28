@@ -27,10 +27,10 @@ pub static EXECUTE_COMMAND: Command = Command {
         let command = if command.starts_with('/') {
             command.to_string()
         } else {
-            format!("/{command}")
+            format!("{command}")
         };
 
-        sender.send(FromDiscord::Command(command.clone())).ok()?;
+        sender.send(FromDiscord(command.clone())).ok()?;
 
         let mut embed = CreateEmbed::default();
         Some(

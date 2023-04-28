@@ -52,7 +52,7 @@ pub static MUTE_COMMAND: Command = Command {
         }
 
         sender
-            .send(FromDiscord::Command(format!(
+            .send(FromDiscord(format!(
                 "/g mute {user} {time}{period}",
             )))
             .ok()?;

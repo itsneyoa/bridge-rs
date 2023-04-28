@@ -37,12 +37,7 @@ pub enum FromMinecraft {
 
 /// A Payload sent from Discord to Minecraft
 #[derive(Debug, PartialEq)]
-pub enum FromDiscord {
-    /// A Message containing the users nickname, message content and the destination chat
-    Message(String, String, Chat),
-    /// A Command to be executed by the Minecraft client
-    Command(String),
-}
+pub struct FromDiscord(pub String);
 
 /// A chat which messages can be sent from and to
 #[derive(Debug, PartialEq, Clone)]

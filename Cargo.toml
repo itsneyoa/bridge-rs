@@ -20,6 +20,7 @@ log = { version = "0.4.17", features = [
     "max_level_trace",
 ] }
 pretty_env_logger = "0.4.0"
+rand = "0.8.5"
 regex = "1.7.3"
 serenity = { version = "0.11.5", default-features = false, features = [
     "builder",

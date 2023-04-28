@@ -47,7 +47,7 @@ pub static SETRANK_COMMAND: Command = Command {
         }
 
         sender
-            .send(FromDiscord::Command(format!("/g setrank {user} {rank}",)))
+            .send(FromDiscord(format!("g setrank {user} {rank}",)))
             .ok()?;
 
         let (description, colour) = replies::get_reply(receiver, |ev| match ev {
