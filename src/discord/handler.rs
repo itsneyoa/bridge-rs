@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 /// The handler for all Discord events
 pub(super) struct Handler {
-    /// See [`Discord::config`]
+    /// See [`crate::Config`]
     config: Config,
     /// The channel used to send payloads to Minecraft
     sender: Sender<FromDiscord>,

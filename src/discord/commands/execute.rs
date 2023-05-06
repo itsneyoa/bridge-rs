@@ -22,13 +22,7 @@ pub static EXECUTE_COMMAND: Command = Command {
         }]
     },
     executor: |interaction, sender, _, _| {
-        let command = interaction.data.options.get_str("command")?;
-
-        let command = if command.starts_with('/') {
-            command.to_string()
-        } else {
-            format!("{command}")
-        };
+        let command = interaction.data.options.get_str("command")?.to_string();
 
         sender.send(FromDiscord(command.clone())).ok()?;
 

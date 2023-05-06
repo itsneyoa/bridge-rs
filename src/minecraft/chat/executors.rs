@@ -1,4 +1,4 @@
-//! Mappings of regex matches to functions which convert them into [`ToDiscord`] payloads
+//! Mappings of regex matches to functions which convert them into [`FromMinecraft`] payloads
 
 use crate::{Chat, FromMinecraft};
 use lazy_regex::{regex, Lazy, Regex};
@@ -8,7 +8,7 @@ use std::iter::Skip;
 /// A closure to execute based on the matches of the regex in [`EXECUTORS`]
 pub(super) type Executor = fn(Skip<SubCaptureMatches>) -> Option<FromMinecraft>;
 
-/// Array mapping all the possible chat regex matches that we care about to [`Executor`] functions which convert them into a [`ToDiscord`] payload
+/// Array mapping all the possible chat regex matches that we care about to [`Executor`] functions which convert them into a [`FromMinecraft`] payload
 pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
     // TODO: Improve ordering of this from most used to least
     // TODO: locraw parse

@@ -21,7 +21,7 @@ pub struct Config {
     pub dev_server_id: Option<String>,
 }
 
-/// The different channels for the [`chats`](super::types::Chat)
+/// The different channels for the [`chats`](super::Chat)
 #[derive(Debug, Clone)]
 pub struct ConfigChannels {
     /// ENV `GUILD_CHANNEL_ID`
