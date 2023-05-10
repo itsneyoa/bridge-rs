@@ -5,8 +5,7 @@ use crate::{
     {FromDiscord, FromMinecraft},
 };
 use async_broadcast::Receiver;
-use flume::Sender;
-use futures::executor::block_on;
+use futures::{executor::block_on, future::BoxFuture};
 use serenity::{
     builder::{
         CreateApplicationCommand, CreateApplicationCommandOption, CreateApplicationCommands,
@@ -22,6 +21,7 @@ use serenity::{
     prelude::Context,
 };
 use std::{collections::HashMap, time::Duration};
+use tokio::sync::mpsc;
 
 pub mod demote;
 pub mod execute;
@@ -61,12 +61,12 @@ lazy_static::lazy_static! {
 }
 
 /// Command executor
-type Executor = fn(
-    &ApplicationCommandInteraction,
-    Sender<FromDiscord>,
+type Executor = for<'a> fn(
+    &'a ApplicationCommandInteraction,
+    mpsc::UnboundedSender<FromDiscord>,
     Receiver<FromMinecraft>,
-    (&Config, &Context),
-) -> Option<CreateEmbed>;
+    (&'a Config, &'a Context),
+) -> BoxFuture<'a, Option<CreateEmbed>>;
 
 /// Command
 #[derive(Debug)]

@@ -6,10 +6,10 @@ use crate::prelude::*;
 use crate::{FromDiscord, FromMinecraft};
 use async_broadcast::{SendError, Sender};
 use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
-use flume::Receiver;
 use lazy_regex::regex_replace_all;
+use std::cell::RefCell;
 use tokio::{
-    sync::mpsc::UnboundedReceiver,
+    sync::mpsc,
     time::{sleep, Duration},
 };
 
@@ -29,14 +29,16 @@ pub(super) struct Minecraft {
     /// The channel used to send payloads to Discord
     sender: Sender<FromMinecraft>,
     /// The channel used to recieve payloads from Discord
-    receiver: Receiver<FromDiscord>,
+    receiver: RefCell<mpsc::UnboundedReceiver<FromDiscord>>,
 }
 
 impl Minecraft {
     /// Create a new instance of [`Minecraft`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub(super) async fn new((tx, rx): (Sender<FromMinecraft>, Receiver<FromDiscord>)) -> Self {
+    pub(super) async fn new(
+        (tx, rx): (Sender<FromMinecraft>, mpsc::UnboundedReceiver<FromDiscord>),
+    ) -> Self {
         let account = if cfg!(debug_assertions) {
             Account::offline("Bridge")
         } else {
@@ -48,7 +50,7 @@ impl Minecraft {
         Self {
             account,
             sender: tx,
-            receiver: rx,
+            receiver: RefCell::new(rx),
         }
     }
 
@@ -62,7 +64,7 @@ impl Minecraft {
                     info!("Connected to `{HOST}` as `{}`", client.profile.name);
 
                     let reason = tokio::try_join!(
-                        self.handle_incoming_messages(self.receiver.clone(), &client),
+                        self.handle_incoming_messages(&self.receiver, &client),
                         self.handle_incoming_events(rx, &client, || delay = Duration::from_secs(5))
                     )
                     .err();
@@ -88,7 +90,7 @@ impl Minecraft {
     }
 
     /// Create a Minecraft client, and set the render distance to the minimum (2)
-    async fn create_client(&self) -> Result<(Client, UnboundedReceiver<Event>), JoinError> {
+    async fn create_client(&self) -> Result<(Client, mpsc::UnboundedReceiver<Event>), JoinError> {
         let (client, rx) = Client::join(&self.account, HOST).await?;
 
         client
@@ -102,17 +104,22 @@ impl Minecraft {
     }
 
     /// Handle all incoming messages from Discord on the bridge
+    #[allow(clippy::await_holding_refcell_ref)] // :(
     async fn handle_incoming_messages(
         &self,
-        rx: Receiver<FromDiscord>,
+        rx: &RefCell<mpsc::UnboundedReceiver<FromDiscord>>,
         client: &Client,
     ) -> Result<(), String> {
-        while let Ok(payload) = rx.recv_async().await {
+        let mut rx = rx.borrow_mut();
+
+        while let Some(payload) = rx.recv().await {
             debug!("{:?}", payload);
 
-            let message = payload.0;
-
+            let message = payload.command().to_string();
             trace!("`{message}`");
+
+            payload.notify();
+
             client.unchecked_send_command_packet(message);
 
             // How long to wait between sending commands
@@ -125,7 +132,7 @@ impl Minecraft {
     /// Handle all incoming events from the Minecraft client
     async fn handle_incoming_events<T>(
         &self,
-        mut rx: UnboundedReceiver<Event>,
+        mut rx: mpsc::UnboundedReceiver<Event>,
         client: &Client,
         mut reset_delay: T,
     ) -> Result<(), String>

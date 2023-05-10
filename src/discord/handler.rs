@@ -4,7 +4,6 @@ use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN,
 use crate::prelude::*;
 use crate::{sanitiser::Sanitise, Config, Failable};
 use async_broadcast::Receiver;
-use flume::Sender;
 use log::*;
 use serenity::builder::CreateEmbed;
 use serenity::http::Http;
@@ -13,13 +12,14 @@ use serenity::{
     prelude::*,
 };
 use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot};
 
 /// The handler for all Discord events
 pub(super) struct Handler {
     /// See [`crate::Config`]
     config: Config,
     /// The channel used to send payloads to Minecraft
-    sender: Sender<FromDiscord>,
+    sender: mpsc::UnboundedSender<FromDiscord>,
     /// The channel used to recieve payloads from Minecraft
     receiver: Receiver<FromMinecraft>,
     /// The channels to send messages to
@@ -316,9 +316,10 @@ impl EventHandler for Handler {
                 .failable();
         }
 
+        let (tx, _rx) = oneshot::channel();
+
         self.sender
-            .send_async(FromDiscord(message))
-            .await
+            .send(FromDiscord::new(message, tx))
             .expect("Failed to send discord message to minecraft");
     }
 
@@ -348,6 +349,7 @@ impl EventHandler for Handler {
                         self.receiver.new_receiver(),
                         (&self.config, &ctx),
                     )
+                    .await
                     .unwrap_or_else(|| {
                         warn!("Command `{}` failed", interaction.data.name);
 
@@ -405,7 +407,7 @@ impl EventHandler for Handler {
 impl Handler {
     /// Create a new handler
     pub fn new(
-        (tx, rx): (Sender<FromDiscord>, Receiver<FromMinecraft>),
+        (tx, rx): (mpsc::UnboundedSender<FromDiscord>, Receiver<FromMinecraft>),
         config: Config,
         channels: Destinations<GuildChannel>,
         webhooks: Destinations<Webhook>,

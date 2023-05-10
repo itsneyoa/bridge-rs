@@ -1,6 +1,6 @@
 //! An Azalea + Serenity bot to synchronize Guild and Officer chats on the Hypixel network between Minecraft and Discord
 
-#![feature(let_chains)]
+#![feature(let_chains, async_closure, type_alias_impl_trait)]
 #![warn(
     clippy::doc_markdown,
     clippy::tabs_in_doc_comments,
@@ -21,17 +21,16 @@ use discord::Discord;
 use dotenv::dotenv;
 use minecraft::Minecraft;
 use prelude::*;
-use std::{env, process::ExitCode, sync::Arc};
-use tokio::sync::Notify;
+use std::{env, process::ExitCode};
+use tokio::sync::{mpsc, Notify};
+
+lazy_static::lazy_static! {
+    static ref SIGINT: Notify = Notify::new();
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let notify = Arc::new(Notify::new());
-
-    {
-        let notify = notify.clone();
-        ctrlc::set_handler(move || notify.notify_one()).expect("Failed to set Ctrl-C handler");
-    }
+    ctrlc::set_handler(move || SIGINT.notify_one()).expect("Failed to set Ctrl-C handler");
 
     // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
     if env::var("RUST_LOG").is_err() {
@@ -42,12 +41,9 @@ async fn main() -> ExitCode {
 
     dotenv().ok();
 
-    match Bridge::create(notify).await {
+    match Bridge::create().await {
         Ok(_) => ExitCode::SUCCESS,
-        Err(BridgeError::SigInt) => {
-            info!("Shutting down...");
-            ExitCode::from(130)
-        }
+        Err(BridgeError::SigInt) => ExitCode::from(130),
         Err(err) => {
             error!("{err}");
             ExitCode::FAILURE
@@ -65,11 +61,10 @@ struct Bridge {
 
 impl Bridge {
     /// Create and start the bridge
-    pub async fn create(notify: Arc<Notify>) -> Result<()> {
-        info!("Starting Bridge...");
+    pub async fn create() -> Result<()> {
         let bridge = Self::new().await?;
 
-        bridge.start(notify).await?;
+        bridge.start().await?;
 
         Ok(())
     }
@@ -79,7 +74,7 @@ impl Bridge {
         let config = Config::new()?;
 
         let (minecraft_sender, discord_receiver) = async_broadcast::broadcast::<FromMinecraft>(16);
-        let (discord_sender, minecraft_receiver) = flume::unbounded::<FromDiscord>();
+        let (discord_sender, minecraft_receiver) = mpsc::unbounded_channel::<FromDiscord>();
 
         Ok(Self {
             minecraft: Minecraft::new((minecraft_sender, minecraft_receiver)).await,
@@ -88,12 +83,29 @@ impl Bridge {
     }
 
     /// Start both halves of the Bridge
-    async fn start(self, notify: Arc<Notify>) -> Result<()> {
-        tokio::try_join!(self.discord.start(), self.minecraft.start(), async {
-            notify.notified().await;
-            Err(BridgeError::SigInt) as Result<()>
-        })?;
+    async fn start(self) -> Result<()> {
+        info!("Starting Bridge...");
+
+        tokio::try_join!(
+            self.discord.start(),
+            self.minecraft.start(),
+            Self::shutdown(),
+        )?;
 
         Ok(())
+    }
+
+    /// Wait for a SIGINT and then shut down the bridge
+    async fn shutdown() -> Result<()> {
+        SIGINT.notified().await;
+        info!("Shutting down...");
+
+        tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            error!("Clean shutdown took too long, forcing exit");
+            std::process::exit(130);
+        });
+
+        Err(BridgeError::SigInt)
     }
 }

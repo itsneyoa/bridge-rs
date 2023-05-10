@@ -1,5 +1,7 @@
 //! Universal typings within the Bridge
 
+use tokio::sync::oneshot;
+
 /// A Payload sent from Minecraft to Discord
 #[derive(Debug, PartialEq, Clone)]
 pub enum FromMinecraft {
@@ -36,8 +38,27 @@ pub enum FromMinecraft {
 }
 
 /// A Payload sent from Discord to Minecraft
-#[derive(Debug, PartialEq)]
-pub struct FromDiscord(pub String);
+#[derive(Debug)]
+pub struct FromDiscord(String, oneshot::Sender<()>);
+
+impl FromDiscord {
+    /// Create a new instance of [`FromDiscord`]
+    pub fn new(command: String, notify: oneshot::Sender<()>) -> Self {
+        Self(command, notify)
+    }
+
+    /// Get the command
+    pub fn command(&self) -> &str {
+        &self.0
+    }
+
+    /// Get the notifier
+    pub fn notify(self) {
+        self.1
+            .send(())
+            .expect("Failed to send oneshot notification");
+    }
+}
 
 /// A chat which messages can be sent from and to
 #[derive(Debug, PartialEq, Clone)]

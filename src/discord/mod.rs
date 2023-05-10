@@ -8,8 +8,6 @@ mod handler;
 use super::{config::Config, FromDiscord, FromMinecraft};
 use crate::prelude::*;
 use async_broadcast::Receiver;
-use flume::Sender;
-use futures::executor::block_on;
 use handler::Handler;
 use serenity::{
     client::ClientBuilder,
@@ -19,6 +17,7 @@ use serenity::{
     utils::Colour,
 };
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use url::Url;
 
 /// Embed colour to indicate a successful operation
@@ -41,7 +40,7 @@ impl Discord {
     ///
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new(
-        (sender, receiver): (Sender<FromDiscord>, Receiver<FromMinecraft>),
+        (sender, receiver): (mpsc::UnboundedSender<FromDiscord>, Receiver<FromMinecraft>),
         config: Config,
     ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
@@ -130,12 +129,6 @@ struct Destinations<T> {
 
 impl Drop for Discord {
     fn drop(&mut self) {
-        block_on(async {
-            tokio::select! {
-                biased;
-                _ = self.handler.stop(self.client.cache_and_http.http.clone()) => {},
-                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
-            }
-        })
+        futures::executor::block_on(self.handler.stop(self.client.cache_and_http.http.clone()))
     }
 }

@@ -5,6 +5,7 @@ use super::{Command, CommandOption, GetOptions};
 use crate::FromDiscord;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
+use tokio::sync::oneshot;
 
 /// Execute command
 pub static EXECUTE_COMMAND: Command = Command {
@@ -22,16 +23,22 @@ pub static EXECUTE_COMMAND: Command = Command {
         }]
     },
     executor: |interaction, sender, _, _| {
-        let command = interaction.data.options.get_str("command")?.to_string();
+        Box::pin(async move {
+            let command = interaction.data.options.get_str("command")?.to_string();
 
-        sender.send(FromDiscord(command.clone())).ok()?;
+            let (tx, rx) = oneshot::channel();
 
-        let mut embed = CreateEmbed::default();
-        Some(
-            embed
-                .description(format!("Running `{command}`"))
-                .colour(GREEN)
-                .to_owned(),
-        )
+            sender.send(FromDiscord::new(command.clone(), tx)).ok()?;
+
+            rx.await.expect("Failed to receive oneshot reply");
+
+            let mut embed = CreateEmbed::default();
+            Some(
+                embed
+                    .description(format!("Running `/{command}`"))
+                    .colour(GREEN)
+                    .to_owned(),
+            )
+        })
     },
 };

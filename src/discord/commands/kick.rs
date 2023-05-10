@@ -6,6 +6,7 @@ use crate::prelude::warn;
 use crate::{FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
+use tokio::sync::oneshot;
 
 /// Kick command
 pub static KICK_COMMAND: Command = Command {
@@ -33,46 +34,52 @@ pub static KICK_COMMAND: Command = Command {
         ]
     },
     executor: |interaction, sender, receiver, _| {
-        let user = interaction.data.options.get_str("username")?;
-        let reason = interaction
-            .data
-            .options
-            .get_str("reason")
-            .unwrap_or("No reason specified");
-        let mut embed = CreateEmbed::default();
+        Box::pin(async move {
+            let user = interaction.data.options.get_str("username")?;
+            let reason = interaction
+                .data
+                .options
+                .get_str("reason")
+                .unwrap_or("No reason specified");
+            let mut embed = CreateEmbed::default();
 
-        if user.contains(char::is_whitespace) {
-            return Some(
-                embed
-                    .description(format!("`{user}` is not a valid username"))
-                    .colour(RED)
-                    .to_owned(),
-            );
-        }
-
-        sender
-            .send(FromDiscord(format!("g kick {user} {reason}",)))
-            .ok()?;
-
-        let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-            FromMinecraft::Kick(u, _) if u.eq_ignore_ascii_case(user) => {
-                Some(Ok(format!("`{u}` was kicked from the guild")))
+            if user.contains(char::is_whitespace) {
+                return Some(
+                    embed
+                        .description(format!("`{user}` is not a valid username"))
+                        .colour(RED)
+                        .to_owned(),
+                );
             }
-            FromMinecraft::Raw(msg) => {
-                if msg == "Invalid usage! '/guild kick <player> <reason>'" {
-                    warn!("Guild kick reason not found");
-                    return Some(Err("Missing reason".to_string()));
+
+            let (tx, rx) = oneshot::channel();
+
+            sender
+                .send(FromDiscord::new(format!("g kick {user} {reason}"), tx))
+                .ok()?;
+
+            rx.await.expect("Failed to receive oneshot reply");
+
+            let (description, colour) = replies::get_reply(receiver, |ev| match ev {
+                FromMinecraft::Kick(u, _) if u.eq_ignore_ascii_case(user) => {
+                    Some(Ok(format!("`{u}` was kicked from the guild")))
                 }
+                FromMinecraft::Raw(msg) => {
+                    if msg == "Invalid usage! '/guild kick <player> <reason>'" {
+                        warn!("Guild kick reason not found");
+                        return Some(Err("Missing reason".to_string()));
+                    }
 
-                if let Some(reason) = replies::common::default(msg, user) {
-                    return Some(reason);
+                    if let Some(reason) = replies::common::default(msg, user) {
+                        return Some(reason);
+                    }
+
+                    None
                 }
+                _ => None,
+            });
 
-                None
-            }
-            _ => None,
-        });
-
-        Some(embed.description(description).colour(colour).to_owned())
+            Some(embed.description(description).colour(colour).to_owned())
+        })
     },
 };

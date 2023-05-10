@@ -6,10 +6,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.70"
 async-broadcast = "0.5.1"
-azalea = { git = "https://github.com/mat-1/azalea" }
+azalea = { git = "https://github.com/mat-1/azalea", rev = "53d51a5" }
 ctrlc = "3.2.5"
 dotenv = "0.15.0"
-flume = "0.10.14"
 futures = "0.3.28"
 fuzzy-matcher = "0.3.7"
 lazy-regex = "2.5.0"
@@ -34,7 +33,7 @@ serenity = { version = "0.11.5", default-features = false, features = [
 ] }
 sorted-vec = "0.8.2"
 thiserror = "1.0.40"
-tokio = "1.27.0"
+tokio = { version = "1.28.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
 url = "2.3.1"
 
 [dev-dependencies]
