@@ -1,6 +1,37 @@
-//! Universal typings within the Bridge
+/// A chat which messages can be sent from and to
+#[derive(Debug, PartialEq, Clone)]
+pub enum Chat {
+    /// Guild chat varient
+    ///
+    /// Uses the `GUILD_CHANNEL_ID` ENV and `/gc` as the command prefix
+    Guild,
+    /// Officer chat
+    ///
+    /// Uses the `OFFICER_CHANNEL_ID` ENV and `/oc` as the command prefix
+    Officer,
+}
 
-use tokio::sync::oneshot;
+/// A Payload sent from Discord to Minecraft
+#[derive(Debug)]
+pub struct FromDiscord(String, tokio::sync::oneshot::Sender<()>);
+
+impl FromDiscord {
+    /// Create a new instance of [`FromDiscord`]
+    pub fn new(command: String, notify: tokio::sync::oneshot::Sender<()>) -> Self {
+        Self(command, notify)
+    }
+
+    /// Get the command
+    pub fn command(&self) -> &str {
+        &self.0
+    }
+
+    /// Get the notifier
+    pub fn notify(self) {
+        // TODO: When Discord feedback to chat messages is implimented, change this to `.expect("Oneshot sender dropped")`
+        self.1.send(()).ok();
+    }
+}
 
 /// A Payload sent from Minecraft to Discord
 #[derive(Debug, PartialEq, Clone)]
@@ -35,40 +66,4 @@ pub enum FromMinecraft {
     GuildUnmute(String),
     /// Raw message content
     Raw(String),
-}
-
-/// A Payload sent from Discord to Minecraft
-#[derive(Debug)]
-pub struct FromDiscord(String, oneshot::Sender<()>);
-
-impl FromDiscord {
-    /// Create a new instance of [`FromDiscord`]
-    pub fn new(command: String, notify: oneshot::Sender<()>) -> Self {
-        Self(command, notify)
-    }
-
-    /// Get the command
-    pub fn command(&self) -> &str {
-        &self.0
-    }
-
-    /// Get the notifier
-    pub fn notify(self) {
-        self.1
-            .send(())
-            .expect("Failed to send oneshot notification");
-    }
-}
-
-/// A chat which messages can be sent from and to
-#[derive(Debug, PartialEq, Clone)]
-pub enum Chat {
-    /// Guild chat varient
-    ///
-    /// Uses the `GUILD_CHANNEL_ID` ENV and `/gc` as the command prefix
-    Guild,
-    /// Officer chat
-    ///
-    /// Uses the `OFFICER_CHANNEL_ID` ENV and `/oc` as the command prefix
-    Officer,
 }

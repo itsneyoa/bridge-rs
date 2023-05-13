@@ -1,0 +1,21 @@
+[package]
+name = "minecraft"
+description = "Minecraft half of the Bridge"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+azalea = { git = "https://github.com/mat-1/azalea", rev = "53d51a5" }
+lazy-regex = "2.5.0"
+async-broadcast = "0.5.1"
+tokio = { version = "1.28.1", features = ["sync", "time"] }
+prelude = { path = "../prelude" }
+regex = "1.8.1"
+rand = "0.8.5"
+
+[dev-dependencies]
+test-case = "3.1.0"

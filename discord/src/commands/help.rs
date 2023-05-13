@@ -31,7 +31,7 @@ pub static HELP_COMMAND: Command = Command {
                 )
                 .field(
                     "Emojis",
-                    crate::sanitiser::DIRT_VARIENTS
+                    sanitiser::DIRT_VARIENTS
                         .iter()
                         .map(|dirt| format!("`{}`: {}", dirt.emoji(), dirt.description()))
                         .collect::<Vec<_>>()

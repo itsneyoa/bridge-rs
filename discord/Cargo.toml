@@ -1,0 +1,31 @@
+[package]
+name = "discord"
+description = "Discord half of the Bridge"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-broadcast = "0.5.1"
+tokio = { version = "1.28.1", features = ["sync"] }
+url = "2.3.1"
+prelude = { path = "../prelude" }
+sanitiser = { path = "../sanitiser" }
+serenity = { version = "0.11.5", default-features = false, features = [
+    "builder",
+    "client",
+    "utils",
+    "rustls_backend",
+    "gateway",
+    "http",
+    "model",
+    "cache",
+] }
+futures = "0.3.28"
+fuzzy-matcher = "0.3.7"
+sorted-vec = "0.8.2"
+lazy-regex = "2.5.0"
+lazy_static = "1.4.0"

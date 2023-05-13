@@ -1,10 +1,11 @@
 //! Handle all incoming Discord events
 
-use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN, RED};
-use crate::prelude::*;
-use crate::{sanitiser::Sanitise, Config, Failable};
+use super::{
+    autocomplete::Autocomplete, builders, commands, Destinations, FromDiscord, GREEN, RED,
+};
+use ::prelude::*;
 use async_broadcast::Receiver;
-use log::*;
+use sanitiser::Sanitise;
 use serenity::builder::CreateEmbed;
 use serenity::http::Http;
 use serenity::{
@@ -497,12 +498,4 @@ enum State {
     ///
     /// The next status message that should be sent is for [`Self::Online`]
     Offline,
-}
-
-/// Failable for tuples, typically returned by [`tokio::join`] when sending discord messages
-impl<T> Failable for (Result<T>, Result<T>) {
-    fn failable(self) {
-        self.0.failable();
-        self.1.failable();
-    }
 }

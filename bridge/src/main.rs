@@ -1,22 +1,3 @@
-//! An Azalea + Serenity bot to synchronize Guild and Officer chats on the Hypixel network between Minecraft and Discord
-
-#![feature(let_chains, async_closure, type_alias_impl_trait)]
-#![warn(
-    clippy::doc_markdown,
-    clippy::tabs_in_doc_comments,
-    missing_docs,
-    clippy::missing_docs_in_private_items,
-    missing_debug_implementations,
-    clippy::unwrap_used
-)]
-#![deny(missing_debug_implementations)]
-
-mod config;
-mod discord;
-mod minecraft;
-mod prelude;
-
-use config::Config;
 use discord::Discord;
 use dotenv::dotenv;
 use minecraft::Minecraft;
@@ -34,7 +15,7 @@ async fn main() -> ExitCode {
 
     // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "ERROR,bridge=DEBUG");
+        env::set_var("RUST_LOG", "bridge,discord,minecraft,prelude,sanitiser");
     }
 
     pretty_env_logger::init();

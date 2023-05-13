@@ -1,12 +1,9 @@
-//! The Minecraft half of the bridge
-
 mod chat;
 
-use crate::prelude::*;
-use crate::{FromDiscord, FromMinecraft};
-use async_broadcast::{SendError, Sender};
+use async_broadcast::Sender;
 use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
 use lazy_regex::regex_replace_all;
+use prelude::*;
 use std::cell::RefCell;
 use tokio::{
     sync::mpsc,
@@ -14,14 +11,14 @@ use tokio::{
 };
 
 /// The server that should be joined by the bot
-const HOST: &str = if cfg!(debug_assertions) {
+pub const HOST: &str = if cfg!(debug_assertions) {
     "localhost"
 } else {
     "mc.hypixel.io"
 };
 
 /// The Minecraft structure
-pub(super) struct Minecraft {
+pub struct Minecraft {
     /// The account to log in with
     /// - Development: An offline account which can only log in to offline server
     /// - Production: A live Microsoft account
@@ -36,7 +33,7 @@ impl Minecraft {
     /// Create a new instance of [`Minecraft`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub(super) async fn new(
+    pub async fn new(
         (tx, rx): (Sender<FromMinecraft>, mpsc::UnboundedReceiver<FromDiscord>),
     ) -> Self {
         let account = if cfg!(debug_assertions) {
@@ -55,7 +52,7 @@ impl Minecraft {
     }
 
     /// Connect to the [`HOST`] server and start listening and sending to Discord over the bridge
-    pub(super) async fn start(self) -> Result<()> {
+    pub async fn start(self) -> Result<()> {
         let mut delay = Duration::from_secs(5);
 
         loop {
@@ -201,14 +198,6 @@ impl Minecraft {
         }
 
         Ok(())
-    }
-}
-
-impl Failable for Result<Option<FromMinecraft>, SendError<FromMinecraft>> {
-    fn failable(self) {
-        if let Err(e) = self {
-            warn!("{:?}", e);
-        }
     }
 }
 

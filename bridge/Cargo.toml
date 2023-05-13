@@ -1,0 +1,20 @@
+[package]
+name = "bridge"
+description = "Binary crate to unite the Discord and Minecraft halves of the Bridge"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-broadcast = "0.5.1"
+ctrlc = "3.2.5"
+discord = { path = "../discord" }
+dotenv = "0.15.0"
+lazy_static = "1.4.0"
+minecraft = { path = "../minecraft" }
+prelude = { path = "../prelude" }
+pretty_env_logger = "0.4.0"
+tokio = { version = "1.28.1", features = ["sync"] }

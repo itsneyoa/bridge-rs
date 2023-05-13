@@ -1,0 +1,13 @@
+[package]
+name = "sanitiser"
+description = "Sanitiser for ensuring messages sent over the Bridge are safe"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+lazy-regex = "2.5.0"
+lazy_static = "1.4.0"

@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 //! The Discord half of the Bridge
 
 mod autocomplete;
@@ -5,8 +6,7 @@ mod builders;
 mod commands;
 mod handler;
 
-use super::{config::Config, FromDiscord, FromMinecraft};
-use crate::prelude::*;
+use ::prelude::*;
 use async_broadcast::Receiver;
 use handler::Handler;
 use serenity::{
@@ -26,7 +26,7 @@ const GREEN: Colour = Colour::from_rgb(71, 240, 74);
 const RED: Colour = Colour::from_rgb(240, 74, 71);
 
 /// The Discord structure
-pub(super) struct Discord {
+pub struct Discord {
     /// The Discord client
     ///
     /// Used to send messages, recieve messages, create and modify webhooks, etc.
@@ -39,7 +39,7 @@ impl Discord {
     /// Create a new instance of [`Discord`]
     ///
     /// **This does not start running anything - use [`Self::start`]**
-    pub(super) async fn new(
+    pub async fn new(
         (sender, receiver): (mpsc::UnboundedSender<FromDiscord>, Receiver<FromMinecraft>),
         config: Config,
     ) -> Result<Self> {
@@ -67,7 +67,7 @@ impl Discord {
     }
 
     /// Log in to the Discord API and start listening and sending to Minecraft over the bridge
-    pub(super) async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self) -> Result<()> {
         Ok(self.client.start().await?)
     }
 

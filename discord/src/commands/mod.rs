@@ -1,8 +1,7 @@
 //! Discord commands
 
 use crate::{
-    config::Config,
-    {FromDiscord, FromMinecraft},
+    Config, {FromDiscord, FromMinecraft},
 };
 use async_broadcast::Receiver;
 use futures::{executor::block_on, future::BoxFuture};
@@ -289,7 +288,7 @@ impl GetOptions for Vec<CommandDataOption> {
 /// Module for getting feedback from the minecraft client for slash commands
 mod replies {
     use super::*;
-    use crate::discord::{GREEN, RED};
+    use crate::{GREEN, RED};
     use serenity::utils::Colour;
 
     /// The type returned by the [`get_reply`] function
@@ -338,7 +337,7 @@ mod replies {
     pub mod common {
         use super::*;
         use lazy_regex::regex_find;
-        use log::warn;
+        use prelude::warn;
 
         /// Handler for if the targeted user is not in the guild
         fn not_in_guild(message: &str, user: &str) -> Value {

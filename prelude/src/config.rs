@@ -1,7 +1,7 @@
 //! Configuration
 //! Loads, validates and parses all required Environment Variables
 
-use crate::prelude::*;
+use crate::*;
 use std::env;
 
 /// The configuration
