@@ -49,7 +49,7 @@ pub fn get_commands() -> Vec<&'static Command> {
 }
 
 lazy_static::lazy_static! {
-    pub static ref EXECUTORS: HashMap<&'static str, Executor> = {
+    pub(super) static ref EXECUTORS: HashMap<&'static str, Executor> = {
         let mut executors: HashMap<&str, Executor> = HashMap::new();
 
         for command in get_commands() {
@@ -303,7 +303,7 @@ mod replies {
     const TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Get a reply from the minecraft client, or give up if the [`TIMEOUT`] is reached
-    pub fn get_reply<F>(receiver: Receiver<FromMinecraft>, handler: F) -> (String, Colour)
+    pub(super) fn get_reply<F>(receiver: Receiver<FromMinecraft>, handler: F) -> (String, Colour)
     where
         F: Fn(FromMinecraft) -> Value,
     {

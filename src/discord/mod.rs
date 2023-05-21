@@ -5,8 +5,7 @@ mod builders;
 mod commands;
 mod handler;
 
-use super::{config::Config, FromDiscord, FromMinecraft};
-use crate::prelude::*;
+use crate::{config::Config, prelude::*, FromMinecraft};
 use async_broadcast::Receiver;
 use handler::Handler;
 use serenity::{
@@ -17,7 +16,7 @@ use serenity::{
     utils::Colour,
 };
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
 /// Embed colour to indicate a successful operation
@@ -130,5 +129,28 @@ struct Destinations<T> {
 impl Drop for Discord {
     fn drop(&mut self) {
         futures::executor::block_on(self.handler.stop(self.client.cache_and_http.http.clone()))
+    }
+}
+
+/// A Payload sent from Discord to Minecraft
+#[derive(Debug)]
+pub struct FromDiscord(String, oneshot::Sender<()>);
+
+impl FromDiscord {
+    /// Create a new instance of [`FromDiscord`]
+    pub fn new(command: String, notify: oneshot::Sender<()>) -> Self {
+        Self(command, notify)
+    }
+
+    /// Get the command
+    pub fn command(&self) -> &str {
+        &self.0
+    }
+
+    /// Get the notifier
+    pub fn notify(self) {
+        self.1.send(()).ok();
+        // .expect("Discord to Minecraft message reciever dropped before being notified")
+        // TODO: When Discord -> Minecraft message checking is implemented, this should panic on oneshot reciever drop
     }
 }

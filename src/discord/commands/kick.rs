@@ -2,8 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::prelude::warn;
-use crate::{FromDiscord, FromMinecraft};
+use crate::{output, FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -66,7 +65,7 @@ pub static KICK_COMMAND: Command = Command {
                 }
                 FromMinecraft::Raw(msg) => {
                     if msg == "Invalid usage! '/guild kick <player> <reason>'" {
-                        warn!("Guild kick reason not found");
+                        output::send("Guild kick reason not found", output::Warn);
                         return Some(Err("Missing reason".to_string()));
                     }
 

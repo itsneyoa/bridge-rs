@@ -2,10 +2,14 @@
 
 mod chat;
 
-use crate::prelude::*;
-use crate::{FromDiscord, FromMinecraft};
+use crate::{output, prelude::*, FromDiscord};
 use async_broadcast::{SendError, Sender};
-use azalea::{prelude::*, Account, Client, ClientInformation, JoinError};
+use azalea::{
+    app::{App, PluginGroup},
+    prelude::*,
+    protocol::{resolver, ServerAddress},
+    start_ecs, Account, Client, ClientInformation, DefaultPlugins, JoinError,
+};
 use lazy_regex::regex_replace_all;
 use std::cell::RefCell;
 use tokio::{
@@ -61,7 +65,10 @@ impl Minecraft {
         loop {
             let reason: String = match self.create_client().await {
                 Ok((client, rx)) => {
-                    info!("Connected to `{HOST}` as `{}`", client.profile.name);
+                    output::send(
+                        format!("Connected to `{HOST}` as `{}`", client.profile.name),
+                        output::Info,
+                    );
 
                     let reason = tokio::try_join!(
                         self.handle_incoming_messages(&self.receiver, &client),
@@ -78,7 +85,10 @@ impl Minecraft {
                 },
             };
 
-            warn!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}.");
+            output::send(
+                format!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}."),
+                output::Warn,
+            );
             self.sender
                 .broadcast(FromMinecraft::Disconnect(reason))
                 .await
@@ -91,7 +101,28 @@ impl Minecraft {
 
     /// Create a Minecraft client, and set the render distance to the minimum (2)
     async fn create_client(&self) -> Result<(Client, mpsc::UnboundedReceiver<Event>), JoinError> {
-        let (client, rx) = Client::join(&self.account, HOST).await?;
+        let (client, rx) = {
+            // https://github.com/mat-1/azalea/blob/8ef57aa698a373661076933e8aa25af0f82c758d/azalea-client/src/client.rs#L215
+            let address: ServerAddress = HOST.try_into().map_err(|_| JoinError::InvalidAddress)?;
+            let resolved_address = resolver::resolve_address(&address).await?;
+
+            // An event that causes the schedule to run. This is only used internally.
+            let (run_schedule_sender, run_schedule_receiver) = mpsc::unbounded_channel();
+
+            let mut app = App::new();
+            app.add_plugins(DefaultPlugins.build().disable::<bevy_log::LogPlugin>());
+
+            let ecs_lock = start_ecs(app, run_schedule_receiver, run_schedule_sender.clone());
+
+            Client::start_client(
+                ecs_lock,
+                &self.account,
+                &address,
+                &resolved_address,
+                run_schedule_sender,
+            )
+            .await
+        }?;
 
         client
             .set_client_information(ClientInformation {
@@ -113,10 +144,8 @@ impl Minecraft {
         let mut rx = rx.borrow_mut();
 
         while let Some(payload) = rx.recv().await {
-            debug!("{:?}", payload);
-
             let message = payload.command().to_string();
-            trace!("`{message}`");
+            output::send(&message, output::Execute);
 
             payload.notify();
 
@@ -158,6 +187,8 @@ impl Minecraft {
                     let content =
                         regex_replace_all!(r"^-*|-*$", &packet.content(), |_| "").to_string();
 
+                    output::send(&content, output::Chat);
+
                     if let Some(msg) = chat::handle(&content) {
                         self.sender.broadcast(msg).await.failable();
                     }
@@ -190,7 +221,7 @@ impl Minecraft {
                         }
                         Respawn(packet) => {
                             if packet.data_to_keep == 1 {
-                                info!("new wld join!");
+                                output::send("A new world has been joined", output::Info);
                             }
                         }
                         _ => {}
@@ -207,7 +238,7 @@ impl Minecraft {
 impl Failable for Result<Option<FromMinecraft>, SendError<FromMinecraft>> {
     fn failable(self) {
         if let Err(e) = self {
-            warn!("{:?}", e);
+            output::send(e, output::Error);
         }
     }
 }
@@ -239,4 +270,39 @@ impl UncheckedSend for Client {
             .get(),
         );
     }
+}
+
+/// A Payload sent from Minecraft to Discord
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum FromMinecraft {
+    /// A Message containing the users IGN, message content and the destination chat
+    Message(String, String, Chat),
+    /// The Minecraft client has sucessfully connected to the server. Contains the username of the bot
+    Connect(String),
+    /// The Minecraft client has been disconnected from the server. Contains the reason for the disconnect
+    Disconnect(String),
+    /// A Guild Member logged in to Hypixel
+    Login(String),
+    /// A Guild Member logged out of Hypixel
+    Logout(String),
+    /// A Member joined the guild
+    Join(String),
+    /// A Member left the guild
+    Leave(String),
+    /// A Member was kicked from the guild
+    Kick(String, String),
+    /// A member was promoted
+    Promotion(String, String, String),
+    /// A member was demoted
+    Demotion(String, String, String),
+    /// A member was muted
+    Mute(String, String, String),
+    /// A member was unmuted
+    Unmute(String, String),
+    /// Guild chat has been muted
+    GuildMute(String, String),
+    /// Guild chat has been unmuted
+    GuildUnmute(String),
+    /// Raw message content
+    Raw(String),
 }

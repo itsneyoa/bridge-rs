@@ -27,7 +27,7 @@
 - [x] Sanitise discord nicks and content
 - [x] Online/offline messages
 - [x] Console Logging (`RUST_LOG`)
-- [ ] Console Logging (`stdout`)
+- [x] Console Logging (`stdout`)
 - [ ] Discord Logging
 - [x] Clean up error handling
 - [ ] Chat message feedback (emojis)

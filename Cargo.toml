@@ -6,7 +6,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.70"
 async-broadcast = "0.5.1"
-azalea = { git = "https://github.com/mat-1/azalea", rev = "53d51a5" }
+azalea = "0.7.0"
+bevy_log = { version = "0.10.1", default-features = false }
+colored = "2.0.0"
 ctrlc = "3.2.5"
 dotenv = "0.15.0"
 futures = "0.3.28"

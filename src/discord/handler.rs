@@ -1,8 +1,8 @@
 //! Handle all incoming Discord events
 
 use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN, RED};
-use crate::prelude::*;
-use crate::{sanitiser::Sanitise, Config, Failable};
+use crate::output;
+use crate::{prelude::*, sanitiser::Sanitise, Config, Failable, FromDiscord, FromMinecraft};
 use async_broadcast::Receiver;
 use log::*;
 use serenity::builder::CreateEmbed;
@@ -35,10 +35,14 @@ pub(super) struct Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, client: Ready) {
-        info!(
-            "Logged into Discord as `{}`",
-            format_args!("{}#{}", client.user.name, client.user.discriminator)
-        );
+        {
+            let message = format!(
+                "Logged into Discord as `{}`",
+                format_args!("{}#{}", client.user.name, client.user.discriminator)
+            );
+            info!("{}", message);
+            output::send(&message, output::Info);
+        }
 
         self.channels
             .guild
@@ -58,8 +62,6 @@ impl EventHandler for Handler {
         let mut receiver = self.receiver.clone();
         while let Ok(payload) = receiver.recv().await {
             use FromMinecraft::*;
-
-            debug!("{:?}", payload);
 
             match payload {
                 Message(author, content, chat) => {
@@ -295,6 +297,11 @@ impl EventHandler for Handler {
             _ => return,
         };
 
+        output::send(
+            format!("{}: {}", msg.author.tag(), msg.content_safe(&ctx.cache)),
+            output::Message,
+        );
+
         let prefix = match chat {
             Chat::Guild => "gc",
             Chat::Officer => "oc",
@@ -305,7 +312,7 @@ impl EventHandler for Handler {
             msg.author_nick(&ctx.http)
                 .await
                 .unwrap_or(msg.author.name.clone()),
-            msg.content
+            msg.content_safe(&ctx.cache)
         )
         .sanitise();
 
@@ -320,7 +327,7 @@ impl EventHandler for Handler {
 
         self.sender
             .send(FromDiscord::new(message, tx))
-            .expect("Failed to send discord message to minecraft");
+            .expect("Discord command reciever dropped before being notified");
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
@@ -330,9 +337,14 @@ impl EventHandler for Handler {
 
         match interaction {
             ApplicationCommand(interaction) => {
-                debug!(
-                    "{}#{} ran {}",
-                    interaction.user.name, interaction.user.discriminator, interaction.data.name
+                output::send(
+                    format!(
+                        "{}#{} ran {}",
+                        interaction.user.name,
+                        interaction.user.discriminator,
+                        interaction.data.name
+                    ),
+                    output::Command,
                 );
 
                 interaction

@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{warn, FromDiscord, FromMinecraft};
+use crate::{output, FromDiscord, FromMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -95,7 +95,7 @@ pub static MUTE_COMMAND: Command = Command {
                     }
 
                     if msg == "Invalid time format! Try 7d, 1d, 6h, 1h" {
-                        warn!("Invalid mute length");
+                        output::send("Invalid mute length", output::Warn);
                         return Some(Err("Invalid mute length".to_string()));
                     }
 

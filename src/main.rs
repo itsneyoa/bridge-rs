@@ -14,14 +14,15 @@
 mod config;
 mod discord;
 mod minecraft;
+mod output;
 mod prelude;
 
 use config::Config;
-use discord::Discord;
+use discord::{Discord, FromDiscord};
 use dotenv::dotenv;
-use minecraft::Minecraft;
+use minecraft::{FromMinecraft, Minecraft};
 use prelude::*;
-use std::{env, process::ExitCode};
+use std::process::ExitCode;
 use tokio::sync::{mpsc, Notify};
 
 lazy_static::lazy_static! {
@@ -31,21 +32,14 @@ lazy_static::lazy_static! {
 #[tokio::main]
 async fn main() -> ExitCode {
     ctrlc::set_handler(move || SIGINT.notify_one()).expect("Failed to set Ctrl-C handler");
-
-    // Hide the tsunami of logs from Azalea. There must be a better way but I don't know it :(
-    if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "ERROR,bridge=DEBUG");
-    }
-
     pretty_env_logger::init();
-
     dotenv().ok();
 
     match Bridge::create().await {
         Ok(_) => ExitCode::SUCCESS,
         Err(BridgeError::SigInt) => ExitCode::from(130),
         Err(err) => {
-            error!("{err}");
+            output::send(err, output::Error);
             ExitCode::FAILURE
         }
     }
@@ -84,7 +78,7 @@ impl Bridge {
 
     /// Start both halves of the Bridge
     async fn start(self) -> Result<()> {
-        info!("Starting Bridge...");
+        output::send("Starting Bridge", output::Info);
 
         tokio::try_join!(
             self.discord.start(),
@@ -98,11 +92,18 @@ impl Bridge {
     /// Wait for a SIGINT and then shut down the bridge
     async fn shutdown() -> Result<()> {
         SIGINT.notified().await;
-        info!("Shutting down...");
+        output::send("Shutting down...", output::Info);
 
         tokio::spawn(async {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            error!("Clean shutdown took too long, forcing exit");
+            let duration = std::time::Duration::from_secs(1);
+            tokio::time::sleep(duration).await;
+            output::send(
+                format!(
+                    "Clean shutdown took too long (> {:?}), forcing exit",
+                    duration
+                ),
+                output::Error,
+            );
             std::process::exit(130);
         });
 
