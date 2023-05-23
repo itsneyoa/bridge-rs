@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{FromDiscord, FromMinecraft};
+use crate::{ToDiscord, ToMinecraft};
 use lazy_regex::{regex_find, regex_is_match};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
@@ -40,16 +40,16 @@ pub static PROMOTE_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(format!("g promote {user}"), tx))
+                .send(ToMinecraft::command(format!("g promote {user}"), tx))
                 .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-                FromMinecraft::Promotion(u, from, to) if u.eq_ignore_ascii_case(user) => {
+                ToDiscord::Promotion(u, from, to) if u.eq_ignore_ascii_case(user) => {
                     Some(Ok(format!("`{u}` has been promoted from {from} to {to}")))
                 }
-                FromMinecraft::Raw(msg) => {
+                ToDiscord::Raw(msg) => {
                     if let Some(u) = regex_find!(
                         r"^(?:\\[.+?\\] )?(\w+) is already the highest rank you've created!-*$",
                         &msg

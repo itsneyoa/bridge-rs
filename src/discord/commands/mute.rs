@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{output, FromDiscord, FromMinecraft};
+use crate::{output, ToDiscord, ToMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -56,7 +56,7 @@ pub static MUTE_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(
+                .send(ToMinecraft::command(
                     format!("/g mute {user} {time}{period}"),
                     tx,
                 ))
@@ -65,19 +65,19 @@ pub static MUTE_COMMAND: Command = Command {
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-                FromMinecraft::Mute(u, _, t)
+                ToDiscord::Mute(u, _, t)
                     if u.eq_ignore_ascii_case(user)
                         && t.eq_ignore_ascii_case(&format!("{time}{period}")) =>
                 {
                     Some(Ok(format!("`{u}` has been muted for `{t}`")))
                 }
-                FromMinecraft::GuildMute(_, t)
+                ToDiscord::GuildMute(_, t)
                     if t.eq_ignore_ascii_case(&format!("{time}{period}"))
                         && user.eq_ignore_ascii_case("everyone") =>
                 {
                     Some(Ok(format!("Guild Chat has been muted for `{t}`")))
                 }
-                FromMinecraft::Raw(msg) => {
+                ToDiscord::Raw(msg) => {
                     if msg == "This player is already muted!" {
                         return Some(Err("This player is already muted".to_string()));
                     }

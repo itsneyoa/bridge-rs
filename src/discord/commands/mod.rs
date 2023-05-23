@@ -2,7 +2,7 @@
 
 use crate::{
     config::Config,
-    {FromDiscord, FromMinecraft},
+    {ToDiscord, ToMinecraft},
 };
 use async_broadcast::Receiver;
 use futures::{executor::block_on, future::BoxFuture};
@@ -63,8 +63,8 @@ lazy_static::lazy_static! {
 /// Command executor
 type Executor = for<'a> fn(
     &'a ApplicationCommandInteraction,
-    mpsc::UnboundedSender<FromDiscord>,
-    Receiver<FromMinecraft>,
+    mpsc::UnboundedSender<ToMinecraft>,
+    Receiver<ToDiscord>,
     (&'a Config, &'a Context),
 ) -> BoxFuture<'a, Option<CreateEmbed>>;
 
@@ -303,9 +303,9 @@ mod replies {
     const TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Get a reply from the minecraft client, or give up if the [`TIMEOUT`] is reached
-    pub(super) fn get_reply<F>(receiver: Receiver<FromMinecraft>, handler: F) -> (String, Colour)
+    pub(super) fn get_reply<F>(receiver: Receiver<ToDiscord>, handler: F) -> (String, Colour)
     where
-        F: Fn(FromMinecraft) -> Value,
+        F: Fn(ToDiscord) -> Value,
     {
         match block_on(async {
             tokio::select! {
@@ -321,9 +321,9 @@ mod replies {
     }
 
     /// Get a reply from the minecraft client
-    async fn events<F>(mut rx: Receiver<FromMinecraft>, handler: F) -> Value
+    async fn events<F>(mut rx: Receiver<ToDiscord>, handler: F) -> Value
     where
-        F: Fn(FromMinecraft) -> Value,
+        F: Fn(ToDiscord) -> Value,
     {
         while let Ok(payload) = rx.recv().await {
             if let Some(result) = handler(payload) {

@@ -2,7 +2,7 @@
 
 use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN, RED};
 use crate::output;
-use crate::{prelude::*, sanitiser::Sanitise, Config, Failable, FromDiscord, FromMinecraft};
+use crate::{prelude::*, sanitiser::Sanitise, Config, Failable, ToDiscord, ToMinecraft};
 use async_broadcast::Receiver;
 use log::*;
 use serenity::builder::CreateEmbed;
@@ -19,9 +19,9 @@ pub(super) struct Handler {
     /// See [`crate::Config`]
     config: Config,
     /// The channel used to send payloads to Minecraft
-    sender: mpsc::UnboundedSender<FromDiscord>,
+    sender: mpsc::UnboundedSender<ToMinecraft>,
     /// The channel used to recieve payloads from Minecraft
-    receiver: Receiver<FromMinecraft>,
+    receiver: Receiver<ToDiscord>,
     /// The channels to send messages to
     channels: Destinations<GuildChannel>,
     /// The webhooks to send messages to
@@ -61,7 +61,7 @@ impl EventHandler for Handler {
 
         let mut receiver = self.receiver.clone();
         while let Ok(payload) = receiver.recv().await {
-            use FromMinecraft::*;
+            use ToDiscord::*;
 
             match payload {
                 Message(author, content, chat) => {
@@ -302,13 +302,8 @@ impl EventHandler for Handler {
             output::Message,
         );
 
-        let prefix = match chat {
-            Chat::Guild => "gc",
-            Chat::Officer => "oc",
-        };
-
         let (message, dirt) = format!(
-            "{prefix} {}: {}",
+            "{}: {}",
             msg.author_nick(&ctx.http)
                 .await
                 .unwrap_or(msg.author.name.clone()),
@@ -326,7 +321,7 @@ impl EventHandler for Handler {
         let (tx, _rx) = oneshot::channel();
 
         self.sender
-            .send(FromDiscord::new(message, tx))
+            .send(ToMinecraft::Message(message, chat, tx))
             .expect("Discord command reciever dropped before being notified");
     }
 
@@ -419,7 +414,7 @@ impl EventHandler for Handler {
 impl Handler {
     /// Create a new handler
     pub fn new(
-        (tx, rx): (mpsc::UnboundedSender<FromDiscord>, Receiver<FromMinecraft>),
+        (tx, rx): (mpsc::UnboundedSender<ToMinecraft>, Receiver<ToDiscord>),
         config: Config,
         channels: Destinations<GuildChannel>,
         webhooks: Destinations<Webhook>,

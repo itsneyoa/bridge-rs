@@ -14,7 +14,7 @@ pub enum BridgeError {
 
     /// Minecraft join error
     #[error("Minecraft client could not join - {0}")]
-    MinecraftJoin(#[from] azalea::JoinError),
+    MinecraftJoin(#[from] azalea::StartError),
 
     /// Discord error
     #[error("Discord - {0}")]

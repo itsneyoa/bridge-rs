@@ -1,3 +1,11 @@
+# Output
 /target
+
+# Secrets
 .env
+
+# Testing Minecraft server
 /server
+
+# IDE Config
+/.vscode

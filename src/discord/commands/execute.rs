@@ -2,7 +2,7 @@
 
 use super::super::GREEN;
 use super::{Command, CommandOption, GetOptions};
-use crate::FromDiscord;
+use crate::ToMinecraft;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -28,7 +28,9 @@ pub static EXECUTE_COMMAND: Command = Command {
 
             let (tx, rx) = oneshot::channel();
 
-            sender.send(FromDiscord::new(command.clone(), tx)).ok()?;
+            sender
+                .send(ToMinecraft::command(command.clone(), tx))
+                .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 

@@ -40,3 +40,13 @@ pub enum Chat {
     /// Uses the `OFFICER_CHANNEL_ID` ENV and `/oc` as the command prefix
     Officer,
 }
+
+impl Chat {
+    /// Get the prefix to send a chat message to Minecraft
+    pub fn prefix(&self) -> &str {
+        match self {
+            Chat::Guild => "gc",
+            Chat::Officer => "oc",
+        }
+    }
+}

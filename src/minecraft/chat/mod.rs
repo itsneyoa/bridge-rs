@@ -2,13 +2,13 @@
 
 mod executors;
 
-use crate::FromMinecraft;
+use crate::ToDiscord;
 use lazy_regex::regex;
 
 /// Handle an incoming chat message
 ///
 /// If the message is of interest (i.e. contained in [`executors::EXECUTORS`]) return the payload to send to Discord
-pub(super) fn handle(message: &str) -> Option<FromMinecraft> {
+pub(super) fn handle(message: &str) -> Option<ToDiscord> {
     // Messages like -------
     if regex!(r"&-+$").is_match(message) {
         return None;

@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{output, FromDiscord, FromMinecraft};
+use crate::{output, ToDiscord, ToMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -54,16 +54,16 @@ pub static KICK_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(format!("g kick {user} {reason}"), tx))
+                .send(ToMinecraft::command(format!("g kick {user} {reason}"), tx))
                 .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-                FromMinecraft::Kick(u, _) if u.eq_ignore_ascii_case(user) => {
+                ToDiscord::Kick(u, _) if u.eq_ignore_ascii_case(user) => {
                     Some(Ok(format!("`{u}` was kicked from the guild")))
                 }
-                FromMinecraft::Raw(msg) => {
+                ToDiscord::Raw(msg) => {
                     if msg == "Invalid usage! '/guild kick <player> <reason>'" {
                         output::send("Guild kick reason not found", output::Warn);
                         return Some(Err("Missing reason".to_string()));

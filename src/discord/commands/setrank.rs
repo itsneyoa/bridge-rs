@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{FromDiscord, FromMinecraft};
+use crate::{ToDiscord, ToMinecraft};
 use lazy_regex::regex_find;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
@@ -51,23 +51,23 @@ pub static SETRANK_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(format!("g setrank {user} {rank}"), tx))
+                .send(ToMinecraft::command(format!("g setrank {user} {rank}"), tx))
                 .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-                FromMinecraft::Promotion(u, from, to)
+                ToDiscord::Promotion(u, from, to)
                     if u.eq_ignore_ascii_case(user) && to.eq_ignore_ascii_case(rank) =>
                 {
                     Some(Ok(format!("`{u}` has been promoted from {from} to {to}")))
                 }
-                FromMinecraft::Demotion(u, from, to)
+                ToDiscord::Demotion(u, from, to)
                     if u.eq_ignore_ascii_case(user) && to.eq_ignore_ascii_case(rank) =>
                 {
                     Some(Ok(format!("`{u}` has been demoted from {from} to {to}")))
                 }
-                FromMinecraft::Raw(msg) => {
+                ToDiscord::Raw(msg) => {
                     if let Some(r) = regex_find!(
                     r"I couldn't find a rank by the name of '(.+)'!",
                     &msg

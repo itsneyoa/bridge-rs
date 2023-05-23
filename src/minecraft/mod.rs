@@ -1,19 +1,14 @@
 //! The Minecraft half of the bridge
 
 mod chat;
+mod handler;
 
-use crate::{output, prelude::*, FromDiscord};
-use async_broadcast::{SendError, Sender};
-use azalea::{
-    app::{App, PluginGroup},
-    prelude::*,
-    protocol::{resolver, ServerAddress},
-    start_ecs, Account, Client, ClientInformation, DefaultPlugins, JoinError,
-};
-use lazy_regex::regex_replace_all;
-use std::cell::RefCell;
+use crate::{output, prelude::*, ToDiscord};
+use async_broadcast::Sender;
+use azalea::{Account, Client};
+use std::sync::Arc;
 use tokio::{
-    sync::mpsc,
+    sync::{mpsc, oneshot, Mutex, Notify},
     time::{sleep, Duration},
 };
 
@@ -31,9 +26,9 @@ pub(super) struct Minecraft {
     /// - Production: A live Microsoft account
     account: Account,
     /// The channel used to send payloads to Discord
-    sender: Sender<FromMinecraft>,
+    sender: Sender<ToDiscord>,
     /// The channel used to recieve payloads from Discord
-    receiver: RefCell<mpsc::UnboundedReceiver<FromDiscord>>,
+    receiver: Mutex<mpsc::UnboundedReceiver<ToMinecraft>>,
 }
 
 impl Minecraft {
@@ -41,7 +36,7 @@ impl Minecraft {
     ///
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new(
-        (tx, rx): (Sender<FromMinecraft>, mpsc::UnboundedReceiver<FromDiscord>),
+        (tx, rx): (Sender<ToDiscord>, mpsc::UnboundedReceiver<ToMinecraft>),
     ) -> Self {
         let account = if cfg!(debug_assertions) {
             Account::offline("Bridge")
@@ -54,188 +49,95 @@ impl Minecraft {
         Self {
             account,
             sender: tx,
-            receiver: RefCell::new(rx),
+            receiver: Mutex::new(rx),
         }
     }
 
     /// Connect to the [`HOST`] server and start listening and sending to Discord over the bridge
     pub(super) async fn start(self) -> Result<()> {
-        let mut delay = Duration::from_secs(5);
+        let delay = Arc::new(Mutex::new(Duration::from_secs(5)));
+
+        let notify = Arc::new(Notify::new());
+
+        let (command_sender, command_receiver) = {
+            let (tx, rx) = mpsc::channel(16);
+            (tx, Arc::new(Mutex::new(rx)))
+        };
+
+        {
+            let (delay, notify) = (delay.clone(), notify.clone());
+            tokio::spawn(async move {
+                loop {
+                    notify.notified().await;
+                    *delay.lock().await = Duration::from_secs(5);
+                }
+            });
+        }
 
         loop {
-            let reason: String = match self.create_client().await {
-                Ok((client, rx)) => {
-                    output::send(
-                        format!("Connected to `{HOST}` as `{}`", client.profile.name),
-                        output::Info,
-                    );
+            let (tx, mut rx) = mpsc::channel(1);
 
-                    let reason = tokio::try_join!(
-                        self.handle_incoming_messages(&self.receiver, &client),
-                        self.handle_incoming_events(rx, &client, || delay = Duration::from_secs(5))
-                    )
-                    .err();
+            let bot = handler::create_bot(
+                self.account.clone(),
+                self.sender.clone(),
+                tx.clone(),
+                notify.clone(),
+                (command_sender.clone(), command_receiver.clone()),
+            );
 
-                    reason.unwrap_or("Unknown".into())
-                }
-                Err(err) => match err {
-                    JoinError::Disconnect { reason } => reason.to_string(),
-                    JoinError::Connection(err) => err.to_string(),
-                    _ => return Err(err.into()),
-                },
+            let reason = {
+                // type Result = std::result::Result<(), String>;
+
+                let res: Result<((), (), ()), String> = tokio::try_join!(
+                    async { bot.await.map_err(|e| e.to_string()) },
+                    async {
+                        Err(rx
+                            .recv()
+                            .await
+                            .expect("Reason channel should not be closed"))
+                    },
+                    async {
+                        let mut rx = self.receiver.lock().await;
+
+                        while let Some(payload) = rx.recv().await {
+                            command_sender.send(payload).await.failable();
+                        }
+
+                        Err("Incoming Discord Channel closed".to_string())
+                    }
+                );
+
+                res.err().unwrap_or("Unknown".to_string())
             };
+
+            let mut delay = delay.lock().await;
 
             output::send(
                 format!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}."),
                 output::Warn,
             );
             self.sender
-                .broadcast(FromMinecraft::Disconnect(reason))
+                .broadcast(ToDiscord::Disconnect(reason))
                 .await
                 .failable();
-            sleep(delay).await;
+
+            sleep(*delay).await;
+
             // Reconnect every 5 minutes at most
-            delay = (delay + Duration::from_secs(5)).min(Duration::from_secs(5 * 60));
+            *delay = (*delay + Duration::from_secs(5)).min(Duration::from_secs(5 * 60));
         }
-    }
-
-    /// Create a Minecraft client, and set the render distance to the minimum (2)
-    async fn create_client(&self) -> Result<(Client, mpsc::UnboundedReceiver<Event>), JoinError> {
-        let (client, rx) = {
-            // https://github.com/mat-1/azalea/blob/8ef57aa698a373661076933e8aa25af0f82c758d/azalea-client/src/client.rs#L215
-            let address: ServerAddress = HOST.try_into().map_err(|_| JoinError::InvalidAddress)?;
-            let resolved_address = resolver::resolve_address(&address).await?;
-
-            // An event that causes the schedule to run. This is only used internally.
-            let (run_schedule_sender, run_schedule_receiver) = mpsc::unbounded_channel();
-
-            let mut app = App::new();
-            app.add_plugins(DefaultPlugins.build().disable::<bevy_log::LogPlugin>());
-
-            let ecs_lock = start_ecs(app, run_schedule_receiver, run_schedule_sender.clone());
-
-            Client::start_client(
-                ecs_lock,
-                &self.account,
-                &address,
-                &resolved_address,
-                run_schedule_sender,
-            )
-            .await
-        }?;
-
-        client
-            .set_client_information(ClientInformation {
-                view_distance: 2,
-                ..Default::default()
-            })
-            .await?;
-
-        Ok((client, rx))
-    }
-
-    /// Handle all incoming messages from Discord on the bridge
-    #[allow(clippy::await_holding_refcell_ref)] // :(
-    async fn handle_incoming_messages(
-        &self,
-        rx: &RefCell<mpsc::UnboundedReceiver<FromDiscord>>,
-        client: &Client,
-    ) -> Result<(), String> {
-        let mut rx = rx.borrow_mut();
-
-        while let Some(payload) = rx.recv().await {
-            let message = payload.command().to_string();
-            output::send(&message, output::Execute);
-
-            payload.notify();
-
-            client.unchecked_send_command_packet(message);
-
-            // How long to wait between sending commands
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        Ok(())
-    }
-
-    /// Handle all incoming events from the Minecraft client
-    async fn handle_incoming_events<T>(
-        &self,
-        mut rx: mpsc::UnboundedReceiver<Event>,
-        client: &Client,
-        mut reset_delay: T,
-    ) -> Result<(), String>
-    where
-        T: FnMut(),
-    {
-        while let Some(event) = rx.recv().await {
-            use Event::*;
-
-            match event {
-                Login => {
-                    trace!("{event:?}");
-                    reset_delay();
-                    self.sender
-                        .broadcast(FromMinecraft::Connect(client.profile.name.clone()))
-                        .await
-                        .failable();
-                }
-                Chat(packet) => {
-                    trace!("{packet:?}");
-
-                    // Remove leading and trailing `-` characters
-                    let content =
-                        regex_replace_all!(r"^-*|-*$", &packet.content(), |_| "").to_string();
-
-                    output::send(&content, output::Chat);
-
-                    if let Some(msg) = chat::handle(&content) {
-                        self.sender.broadcast(msg).await.failable();
-                    }
-
-                    self.sender
-                        .broadcast(FromMinecraft::Raw(content))
-                        .await
-                        .failable()
-                }
-                Death(_packet) => {
-                    use azalea::protocol::packets::game::{
-                        serverbound_client_command_packet::Action::PerformRespawn,
-                        serverbound_client_command_packet::ServerboundClientCommandPacket,
-                    };
-
-                    client.write_packet(
-                        ServerboundClientCommandPacket {
-                            action: PerformRespawn,
-                        }
-                        .get(),
-                    );
-                }
-                Packet(packet) => {
-                    use azalea::protocol::packets::game::ClientboundGamePacket::*;
-
-                    match packet.as_ref() {
-                        Disconnect(packet) => {
-                            trace!("{packet:?}");
-                            return Err(packet.reason.to_string());
-                        }
-                        Respawn(packet) => {
-                            if packet.data_to_keep == 1 {
-                                output::send("A new world has been joined", output::Info);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
     }
 }
 
-impl Failable for Result<Option<FromMinecraft>, SendError<FromMinecraft>> {
+impl<A, B> Failable for Result<Option<A>, async_broadcast::SendError<B>> {
+    fn failable(self) {
+        if let Err(e) = self {
+            output::send(e, output::Error);
+        }
+    }
+}
+
+impl<E> Failable for Result<(), mpsc::error::SendError<E>> {
     fn failable(self) {
         if let Err(e) = self {
             output::send(e, output::Error);
@@ -272,37 +174,50 @@ impl UncheckedSend for Client {
     }
 }
 
-/// A Payload sent from Minecraft to Discord
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) enum FromMinecraft {
-    /// A Message containing the users IGN, message content and the destination chat
-    Message(String, String, Chat),
-    /// The Minecraft client has sucessfully connected to the server. Contains the username of the bot
-    Connect(String),
-    /// The Minecraft client has been disconnected from the server. Contains the reason for the disconnect
-    Disconnect(String),
-    /// A Guild Member logged in to Hypixel
-    Login(String),
-    /// A Guild Member logged out of Hypixel
-    Logout(String),
-    /// A Member joined the guild
-    Join(String),
-    /// A Member left the guild
-    Leave(String),
-    /// A Member was kicked from the guild
-    Kick(String, String),
-    /// A member was promoted
-    Promotion(String, String, String),
-    /// A member was demoted
-    Demotion(String, String, String),
-    /// A member was muted
-    Mute(String, String, String),
-    /// A member was unmuted
-    Unmute(String, String),
-    /// Guild chat has been muted
-    GuildMute(String, String),
-    /// Guild chat has been unmuted
-    GuildUnmute(String),
-    /// Raw message content
-    Raw(String),
+#[derive(Debug)]
+/// A Payload sent from Discord to Minecraft
+pub enum ToMinecraft {
+    /// A command to send to Minecraft
+    Command {
+        /// The command to send to Minecraft. This should not include a trailing slash.
+        command: String,
+        /// The oneshot channel to notify when the message has been sent to Minecraft
+        notify: oneshot::Sender<()>,
+        /// Whether or not to check the message against the Minecraft valid charset
+        unchecked: bool,
+    },
+    /// A message to send to Minecraft
+    Message(String, Chat, oneshot::Sender<()>),
+}
+
+impl ToMinecraft {
+    /// Create a new instance of [`FromDiscord`]
+    pub fn command(command: String, notify: oneshot::Sender<()>) -> Self {
+        Self::Command {
+            command,
+            notify,
+            unchecked: false,
+        }
+    }
+
+    /// Create a new instance of [`FromDiscord`] which should not be sanisized for illegal characters
+    pub fn new_unchecked(command: String, notify: oneshot::Sender<()>) -> Self {
+        Self::Command {
+            command,
+            notify,
+            unchecked: true,
+        }
+    }
+
+    /// Get the notifier
+    pub fn notify(self) {
+        let notify = match self {
+            ToMinecraft::Command { notify, .. } => notify,
+            ToMinecraft::Message(_, _, notify) => notify,
+        };
+
+        notify.send(()).ok();
+        // .expect("Discord to Minecraft message reciever dropped before being notified")
+        // TODO: When Discord -> Minecraft message checking is implemented, this should panic on oneshot reciever drop
+    }
 }

@@ -82,8 +82,6 @@ impl Sanitise for String {
                 |_| ""
             ).trim_end().to_string();
 
-            println!("{cleaned:?}");
-
             if cleaned != self {
                 dirt.push(INVALID_CHARACTERS);
             }

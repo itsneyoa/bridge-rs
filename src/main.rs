@@ -18,9 +18,9 @@ mod output;
 mod prelude;
 
 use config::Config;
-use discord::{Discord, FromDiscord};
+use discord::{Discord, ToDiscord};
 use dotenv::dotenv;
-use minecraft::{FromMinecraft, Minecraft};
+use minecraft::{Minecraft, ToMinecraft};
 use prelude::*;
 use std::process::ExitCode;
 use tokio::sync::{mpsc, Notify};
@@ -67,8 +67,8 @@ impl Bridge {
     async fn new() -> Result<Self> {
         let config = Config::new()?;
 
-        let (minecraft_sender, discord_receiver) = async_broadcast::broadcast::<FromMinecraft>(16);
-        let (discord_sender, minecraft_receiver) = mpsc::unbounded_channel::<FromDiscord>();
+        let (minecraft_sender, discord_receiver) = async_broadcast::broadcast::<ToDiscord>(16);
+        let (discord_sender, minecraft_receiver) = mpsc::unbounded_channel::<ToMinecraft>();
 
         Ok(Self {
             minecraft: Minecraft::new((minecraft_sender, minecraft_receiver)).await,

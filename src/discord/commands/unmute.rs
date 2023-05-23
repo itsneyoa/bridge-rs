@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{FromDiscord, FromMinecraft};
+use crate::{ToDiscord, ToMinecraft};
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 use tokio::sync::oneshot;
@@ -39,19 +39,19 @@ pub static UNMUTE_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(format!("g unmute {user}"), tx))
+                .send(ToMinecraft::command(format!("g unmute {user}"), tx))
                 .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| match ev {
-                FromMinecraft::Unmute(u, _) if u.eq_ignore_ascii_case(user) => {
+                ToDiscord::Unmute(u, _) if u.eq_ignore_ascii_case(user) => {
                     Some(Ok(format!("`{u}` has been unmuted")))
                 }
-                FromMinecraft::GuildUnmute(_) if user.eq_ignore_ascii_case("everyone") => {
+                ToDiscord::GuildUnmute(_) if user.eq_ignore_ascii_case("everyone") => {
                     Some(Ok("Guild Chat has been unmuted".to_string()))
                 }
-                FromMinecraft::Raw(msg) => {
+                ToDiscord::Raw(msg) => {
                     if msg == "This player is not muted!" {
                         return Some(Err("This player is not muted".to_string()));
                     }

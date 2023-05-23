@@ -1,12 +1,12 @@
 //! Mappings of regex matches to functions which convert them into [`FromMinecraft`] payloads
 
-use crate::{Chat, FromMinecraft};
+use crate::{Chat, ToDiscord};
 use lazy_regex::{regex, Lazy, Regex};
 use regex::SubCaptureMatches;
 use std::iter::Skip;
 
 /// A closure to execute based on the matches of the regex in [`EXECUTORS`]
-pub(super) type Executor = fn(Skip<SubCaptureMatches>) -> Option<FromMinecraft>;
+pub(super) type Executor = fn(Skip<SubCaptureMatches>) -> Option<ToDiscord>;
 
 /// Array mapping all the possible chat regex matches that we care about to [`Executor`] functions which convert them into a [`FromMinecraft`] payload
 pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
@@ -21,11 +21,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
                 iter.next().flatten()?.as_str(),
             );
 
-            Some(FromMinecraft::Message(
-                user.into(),
-                message.into(),
-                Chat::Guild,
-            ))
+            Some(ToDiscord::Message(user.into(), message.into(), Chat::Guild))
         },
     ),
     (
@@ -37,7 +33,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
                 iter.next().flatten()?.as_str(),
             );
 
-            Some(FromMinecraft::Message(
+            Some(ToDiscord::Message(
                 user.into(),
                 message.into(),
                 Chat::Officer,
@@ -50,7 +46,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
         |mut iter| {
             let user = iter.next()??.as_str();
 
-            Some(FromMinecraft::Login(user.into()))
+            Some(ToDiscord::Login(user.into()))
         },
     ),
     (
@@ -59,7 +55,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
         |mut iter| {
             let user = iter.next()??.as_str();
 
-            Some(FromMinecraft::Logout(user.into()))
+            Some(ToDiscord::Logout(user.into()))
         },
     ),
     (
@@ -68,7 +64,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
         |mut iter| {
             let user = iter.next()??.as_str();
 
-            Some(FromMinecraft::Join(user.into()))
+            Some(ToDiscord::Join(user.into()))
         },
     ),
     (
@@ -77,7 +73,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
         |mut iter| {
             let user = iter.next()??.as_str();
 
-            Some(FromMinecraft::Leave(user.into()))
+            Some(ToDiscord::Leave(user.into()))
         },
     ),
     (
@@ -87,7 +83,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let user = iter.next()??.as_str();
             let by = iter.next()??.as_str();
 
-            Some(FromMinecraft::Kick(user.into(), by.into()))
+            Some(ToDiscord::Kick(user.into(), by.into()))
         },
     ),
     (
@@ -98,11 +94,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let from = iter.next()??.as_str();
             let to = iter.next()??.as_str();
 
-            Some(FromMinecraft::Promotion(
-                user.into(),
-                from.into(),
-                to.into(),
-            ))
+            Some(ToDiscord::Promotion(user.into(), from.into(), to.into()))
         },
     ),
     (
@@ -113,7 +105,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let from = iter.next()??.as_str();
             let to = iter.next()??.as_str();
 
-            Some(FromMinecraft::Demotion(user.into(), from.into(), to.into()))
+            Some(ToDiscord::Demotion(user.into(), from.into(), to.into()))
         },
     ),
     (
@@ -124,7 +116,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let user = iter.next()??.as_str();
             let time = iter.next()??.as_str();
 
-            Some(FromMinecraft::Mute(user.into(), by.into(), time.into()))
+            Some(ToDiscord::Mute(user.into(), by.into(), time.into()))
         },
     ),
     (
@@ -134,7 +126,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let by = iter.next()??.as_str();
             let user = iter.next()??.as_str();
 
-            Some(FromMinecraft::Unmute(user.into(), by.into()))
+            Some(ToDiscord::Unmute(user.into(), by.into()))
         },
     ),
     (
@@ -144,7 +136,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
             let by = iter.next()??.as_str();
             let time = iter.next()??.as_str();
 
-            Some(FromMinecraft::GuildMute(by.into(), time.into()))
+            Some(ToDiscord::GuildMute(by.into(), time.into()))
         },
     ),
     (
@@ -153,7 +145,7 @@ pub(super) static EXECUTORS: &[(&Lazy<Regex>, Executor)] = &[
         |mut iter| {
             let by = iter.next()??.as_str();
 
-            Some(FromMinecraft::GuildUnmute(by.into()))
+            Some(ToDiscord::GuildUnmute(by.into()))
         },
     ),
 ];
@@ -164,7 +156,7 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    fn test(content: String, expected: Option<FromMinecraft>) {
+    fn test(content: String, expected: Option<ToDiscord>) {
         assert_eq!(handle(&content), expected)
     }
 
@@ -180,7 +172,7 @@ mod tests {
     fn guild(user: &str, content: &str) {
         test(
             format!("Guild > {user}: {content}"),
-            Some(FromMinecraft::Message(
+            Some(ToDiscord::Message(
                 "neyoa".to_string(),
                 "Hello, World!".to_string(),
                 Chat::Guild,
@@ -195,7 +187,7 @@ mod tests {
     fn officer(user: &str, content: &str) {
         test(
             format!("Officer > {user}: {content}"),
-            Some(FromMinecraft::Message(
+            Some(ToDiscord::Message(
                 "neyoa".to_string(),
                 "Hello, World!".to_string(),
                 Chat::Officer,
@@ -208,7 +200,7 @@ mod tests {
     fn join(user: &str) {
         test(
             format!("{user} joined the guild!"),
-            Some(FromMinecraft::Join("neyoa".to_string())),
+            Some(ToDiscord::Join("neyoa".to_string())),
         )
     }
 
@@ -217,7 +209,7 @@ mod tests {
     fn leave(user: &str) {
         test(
             format!("{user} left the guild!"),
-            Some(FromMinecraft::Leave("neyoa".to_string())),
+            Some(ToDiscord::Leave("neyoa".to_string())),
         )
     }
 
@@ -228,7 +220,7 @@ mod tests {
     fn kick(user: &str, by: &str) {
         test(
             format!("{user} was kicked from the guild by {by}!"),
-            Some(FromMinecraft::Kick(
+            Some(ToDiscord::Kick(
                 "neyoa".to_string(),
                 "lesbianeyoa".to_string(),
             )),
@@ -240,7 +232,7 @@ mod tests {
     fn promote(user: &str, from: &str, to: &str) {
         test(
             format!("{user} was promoted from {from} to {to}"),
-            Some(FromMinecraft::Promotion(
+            Some(ToDiscord::Promotion(
                 "neyoa".to_string(),
                 "Member".to_string(),
                 "Staff".to_string(),
@@ -253,7 +245,7 @@ mod tests {
     fn demote(user: &str, from: &str, to: &str) {
         test(
             format!("{user} was demoted from {from} to {to}"),
-            Some(FromMinecraft::Demotion(
+            Some(ToDiscord::Demotion(
                 "neyoa".to_string(),
                 "Staff".to_string(),
                 "Member".to_string(),
@@ -268,7 +260,7 @@ mod tests {
     fn mute(user: &str, by: &str, time: &str) {
         test(
             format!("{by} has muted {user} for {time}"),
-            Some(FromMinecraft::Mute(
+            Some(ToDiscord::Mute(
                 "neyoa".to_string(),
                 "lesbianeyoa".to_string(),
                 "12h".to_string(),
@@ -283,7 +275,7 @@ mod tests {
     fn unmute(user: &str, by: &str) {
         test(
             format!("{by} has unmuted {user}"),
-            Some(FromMinecraft::Unmute(
+            Some(ToDiscord::Unmute(
                 "neyoa".to_string(),
                 "lesbianeyoa".to_string(),
             )),
@@ -295,7 +287,7 @@ mod tests {
     fn guild_mute(user: &str, time: &str) {
         test(
             format!("{user} has muted the guild chat for {time}"),
-            Some(FromMinecraft::GuildMute("neyoa".to_string(), "1d".into())),
+            Some(ToDiscord::GuildMute("neyoa".to_string(), "1d".into())),
         )
     }
 
@@ -304,7 +296,7 @@ mod tests {
     fn guild_unmute(by: &str) {
         test(
             format!("{by} has unmuted the guild chat!"),
-            Some(FromMinecraft::GuildUnmute("neyoa".to_string())),
+            Some(ToDiscord::GuildUnmute("neyoa".to_string())),
         )
     }
 }

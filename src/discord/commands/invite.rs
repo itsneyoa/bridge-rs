@@ -2,7 +2,7 @@
 
 use super::super::RED;
 use super::{replies, Command, CommandOption, GetOptions};
-use crate::{FromDiscord, FromMinecraft};
+use crate::{ToDiscord, ToMinecraft};
 use lazy_regex::regex_find;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
@@ -40,13 +40,13 @@ pub static INVITE_COMMAND: Command = Command {
             let (tx, rx) = oneshot::channel();
 
             sender
-                .send(FromDiscord::new(format!("g invite {user}"), tx))
+                .send(ToMinecraft::command(format!("g invite {user}"), tx))
                 .ok()?;
 
             rx.await.expect("Failed to receive oneshot reply");
 
             let (description, colour) = replies::get_reply(receiver, |ev| {
-                if let FromMinecraft::Raw(msg) = ev {
+                if let ToDiscord::Raw(msg) = ev {
                     if let Some(u) = regex_find!(
                     r"^You invited (?:\\[.+?\\] )?(\w+) to your guild. They have 5 minutes to accept\\.$",
                     &msg
