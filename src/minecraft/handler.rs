@@ -5,13 +5,13 @@ use crate::{minecraft::UncheckedSend, output, prelude::*, ToMinecraft};
 use azalea::{app::PluginGroup, prelude::*, ClientInformation, DefaultBotPlugins, DefaultPlugins};
 use lazy_regex::regex_replace_all;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 
 /// Start the Minecraft bot, loading in the handler
 pub(super) async fn create_bot(
     account: Account,
     discord_sender: async_broadcast::Sender<ToDiscord>,
-    error: mpsc::Sender<String>,
+    error: oneshot::Sender<String>,
     reset_delay: Arc<Notify>,
     (command_sender, command_receiver): (
         mpsc::Sender<ToMinecraft>,
@@ -24,7 +24,7 @@ pub(super) async fn create_bot(
         .set_handler(handle)
         .set_state(State {
             discord_sender: Some(discord_sender),
-            error: Some(error),
+            error: Arc::new(Mutex::new(Some(error))),
             reset_delay: Some(reset_delay),
             command_sender: Some(command_sender),
             command_receiver: Some(command_receiver),
@@ -39,7 +39,7 @@ pub(super) struct State {
     /// The channel used to send payloads to Discord
     discord_sender: Option<async_broadcast::Sender<ToDiscord>>,
     /// The channel used to send errors to the main thread
-    error: Option<mpsc::Sender<String>>,
+    error: Arc<Mutex<Option<oneshot::Sender<String>>>>,
     /// The channel used to reset the delay
     reset_delay: Option<Arc<Notify>>,
     /// The internal command channel sending half
@@ -53,7 +53,6 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
     use Event::*;
 
     let discord_sender = state.discord_sender.expect("Sender not set");
-    let error = state.error.expect("Error sender not set");
     let reset_delay = state.reset_delay.expect("Reset delay fn not set");
     let _command_sender = state.command_sender.expect("Command sender not set");
     let command_receiver = state.command_receiver.expect("Command receiver not set");
@@ -132,9 +131,13 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
             match packet.as_ref() {
                 Disconnect(packet) => {
                     trace!("{packet:?}");
-                    error
-                        .send(packet.reason.to_string())
+                    state
+                        .error
+                        .lock()
                         .await
+                        .take()
+                        .expect("An error has already been reported")
+                        .send(packet.reason.to_string())
                         .expect("Error sending error");
                 }
                 Respawn(packet) => {

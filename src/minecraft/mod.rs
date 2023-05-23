@@ -75,27 +75,20 @@ impl Minecraft {
         }
 
         loop {
-            let (tx, mut rx) = mpsc::channel(1);
+            let (tx, rx) = oneshot::channel();
 
             let bot = handler::create_bot(
                 self.account.clone(),
                 self.sender.clone(),
-                tx.clone(),
+                tx,
                 notify.clone(),
                 (command_sender.clone(), command_receiver.clone()),
             );
 
             let reason = {
-                // type Result = std::result::Result<(), String>;
-
                 let res: Result<((), (), ()), String> = tokio::try_join!(
                     async { bot.await.map_err(|e| e.to_string()) },
-                    async {
-                        Err(rx
-                            .recv()
-                            .await
-                            .expect("Reason channel should not be closed"))
-                    },
+                    async { Err(rx.await.expect("Reason channel should not be closed")) },
                     async {
                         let mut rx = self.receiver.lock().await;
 

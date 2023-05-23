@@ -483,11 +483,15 @@ impl Handler {
 
     /// Send the offline embeds
     pub(super) async fn stop(&self, http: Arc<Http>) {
-        let embed = builders::title_embed("Chat bridge is Offline", RED);
+        let embed = if std::thread::panicking() {
+            builders::title_embed("Chat bridge has Crashed", RED)
+        } else {
+            builders::title_embed("Chat bridge is Offline", RED)
+        };
 
         tokio::join!(
             self.send_channel_embed(&http, &self.channels.guild, embed.clone()),
-            self.send_channel_embed(&http, &self.channels.officer, embed),
+            self.send_channel_embed(&http, &self.channels.officer, embed.clone()),
         )
         .failable();
     }
