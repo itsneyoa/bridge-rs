@@ -40,7 +40,7 @@ pub static HELP_COMMAND: Command = Command {
                 )
                 .field(
                     "Info",
-                    vec![
+                    [
                         format!("Guild Channel: <#{}>", config.channels.guild),
                         format!("Officer Channel: <#{}>", config.channels.officer),
                         format!("Version: `{}`", env!("CARGO_PKG_VERSION")),

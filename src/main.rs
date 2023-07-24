@@ -21,13 +21,13 @@ use config::Config;
 use discord::{Discord, ToDiscord};
 use dotenv::dotenv;
 use minecraft::{Minecraft, ToMinecraft};
+use once_cell::sync::Lazy;
 use prelude::*;
 use std::process::ExitCode;
 use tokio::sync::{mpsc, Notify};
 
-lazy_static::lazy_static! {
-    static ref SIGINT: Notify = Notify::new();
-}
+/// A [`Notify`] instance that is notified when a SIGINT is received
+static SIGINT: Lazy<Notify> = Lazy::new(Notify::new);
 
 #[tokio::main]
 async fn main() -> ExitCode {

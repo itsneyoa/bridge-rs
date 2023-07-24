@@ -1,23 +1,21 @@
 //! Sanitise chat messages to prevent exploits and validate if messages sent
 
 use lazy_regex::regex_replace_all;
-use lazy_static::lazy_static;
 
 /// An emoji to react with and its acompanying description
 #[derive(Debug, PartialEq)]
 pub struct Dirt(&'static str, &'static str);
 
-lazy_static! {
-    pub static ref DIRT_VARIENTS: &'static [Dirt] = &[
-        TOO_LONG,
-        INVALID_CHARACTERS,
-        EMPTY_MESSAGE,
-        BLOCKED,
-        TIMED_OUT,
-        REPEAT_MESSAGE,
-        UNKNOWN_COMMAND
-    ];
-}
+/// The different types of errors which can occur when sanitising a message
+pub const DIRT_VARIENTS: [Dirt; 7] = [
+    TOO_LONG,
+    INVALID_CHARACTERS,
+    EMPTY_MESSAGE,
+    BLOCKED,
+    TIMED_OUT,
+    REPEAT_MESSAGE,
+    UNKNOWN_COMMAND,
+];
 
 impl Dirt {
     /// Get the emoji to react with
