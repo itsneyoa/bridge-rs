@@ -194,6 +194,7 @@ impl ToMinecraft {
     }
 
     /// Create a new instance of [`FromDiscord`] which should not be sanisized for illegal characters
+    #[allow(unused)]
     pub fn new_unchecked(command: String, notify: oneshot::Sender<()>) -> Self {
         Self::Command {
             command,

@@ -1,8 +1,7 @@
 //! Handle all incoming Discord events
 
 use super::{autocomplete::Autocomplete, builders, commands, Destinations, GREEN, RED};
-use crate::output;
-use crate::{prelude::*, sanitiser::Sanitise, Config, Failable, ToDiscord, ToMinecraft};
+use crate::{config, output, prelude::*, sanitiser::Sanitise, Failable, ToDiscord, ToMinecraft};
 use async_broadcast::Receiver;
 use log::*;
 use serenity::builder::CreateEmbed;
@@ -16,8 +15,6 @@ use tokio::sync::{mpsc, oneshot};
 
 /// The handler for all Discord events
 pub(super) struct Handler {
-    /// See [`crate::Config`]
-    config: Config,
     /// The channel used to send payloads to Minecraft
     sender: mpsc::UnboundedSender<ToMinecraft>,
     /// The channel used to recieve payloads from Minecraft
@@ -292,8 +289,8 @@ impl EventHandler for Handler {
         trace!("{msg:?}");
 
         let chat = match msg.channel_id.0 {
-            id if (id == self.config.channels.guild) => Chat::Guild,
-            id if (id == self.config.channels.officer) => Chat::Officer,
+            id if (id == config().channels.guild) => Chat::Guild,
+            id if (id == config().channels.officer) => Chat::Officer,
             _ => return,
         };
 
@@ -354,7 +351,7 @@ impl EventHandler for Handler {
                         &interaction,
                         self.sender.clone(),
                         self.receiver.new_receiver(),
-                        (&self.config, &ctx),
+                        &ctx,
                     )
                     .await
                     .unwrap_or_else(|| {
@@ -415,14 +412,12 @@ impl Handler {
     /// Create a new handler
     pub fn new(
         (tx, rx): (mpsc::UnboundedSender<ToMinecraft>, Receiver<ToDiscord>),
-        config: Config,
         channels: Destinations<GuildChannel>,
         webhooks: Destinations<Webhook>,
     ) -> Self {
         Self {
             sender: tx,
             receiver: rx,
-            config,
             channels,
             webhooks,
             autocomplete: Autocomplete::new(),

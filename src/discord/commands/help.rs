@@ -2,6 +2,7 @@
 
 use super::super::builders::head_url;
 use super::Command;
+use crate::config;
 use serenity::builder::CreateEmbed;
 use serenity::model::Permissions;
 
@@ -11,7 +12,7 @@ pub static HELP_COMMAND: Command = Command {
     description: "Shows the help menu",
     permissions: Permissions::empty(),
     options: &[],
-    executor: |_, _, _, (config, ctx)| {
+    executor: |_, _, _, ctx| {
         Box::pin(async move {
             let mut embed = CreateEmbed::default();
 
@@ -41,8 +42,8 @@ pub static HELP_COMMAND: Command = Command {
                 .field(
                     "Info",
                     [
-                        format!("Guild Channel: <#{}>", config.channels.guild),
-                        format!("Officer Channel: <#{}>", config.channels.officer),
+                        format!("Guild Channel: <#{}>", config().channels.guild),
+                        format!("Officer Channel: <#{}>", config().channels.officer),
                         format!("Version: `{}`", env!("CARGO_PKG_VERSION")),
                     ]
                     .join("\n"),

@@ -2,7 +2,21 @@
 //! Loads, validates and parses all required Environment Variables
 
 use crate::prelude::*;
+use once_cell::sync::OnceCell;
 use std::env;
+
+/// The global configuration
+static CONFIG: OnceCell<Config> = OnceCell::new();
+
+/// Get the global configuration
+pub(super) fn get_config() -> &'static Config {
+    CONFIG.get().expect("Config not initialised")
+}
+
+/// Initialise the global configuration
+pub(super) fn init() -> Result<&'static Config> {
+    CONFIG.get_or_try_init(Config::new)
+}
 
 /// The configuration
 #[derive(Debug, Clone)]
@@ -16,7 +30,7 @@ pub struct Config {
     /// ENV `STAFF_ROLE_ID`
     pub staff_role_id: String,
     /// ENV `LOG_CHANNEL_ID`
-    pub log_channel_id: Option<String>,
+    pub log_channel_id: Option<u64>,
     /// ENV `DEV_SERVER_ID`
     pub dev_server_id: Option<String>,
 }
@@ -32,7 +46,7 @@ pub struct ConfigChannels {
 
 impl Config {
     /// Load all the required variables into an instance of [`Config`]
-    pub fn new() -> Result<Self> {
+    fn new() -> Result<Self> {
         Ok(Self {
             token: required("DISCORD_TOKEN")?,
             owner_id: required("OWNER_ID")?,
@@ -41,8 +55,8 @@ impl Config {
                 officer: required("OFFICER_CHANNEL_ID")?,
             },
             staff_role_id: required("STAFF_ROLE_ID")?,
-            log_channel_id: optional("LOG_CHANNEL_ID"),
-            dev_server_id: optional("DEV_SERVER_ID"),
+            log_channel_id: optional("LOG_CHANNEL_ID")?,
+            dev_server_id: optional("DEV_SERVER_ID")?,
         })
     }
 }
@@ -68,15 +82,12 @@ fn required<T: std::str::FromStr>(key: &str) -> Result<T> {
 }
 
 /// Load the specified key
-fn optional(key: &str) -> Option<String> {
+fn optional<T: std::str::FromStr>(key: &str) -> Result<Option<T>> {
     match env::var(key) {
-        Ok(val) => {
-            if val.is_empty() {
-                None
-            } else {
-                Some(val)
-            }
-        }
-        Err(_) => None,
+        Ok(val) => Ok(Some(
+            val.parse::<T>()
+                .map_err(|_| BridgeError::EnvInvalid(key.to_string()))?,
+        )),
+        Err(_) => Ok(None),
     }
 }

@@ -1,9 +1,6 @@
 //! Discord commands
 
-use crate::{
-    config::Config,
-    {ToDiscord, ToMinecraft},
-};
+use crate::{ToDiscord, ToMinecraft};
 use async_broadcast::Receiver;
 use futures::{executor::block_on, future::BoxFuture};
 use once_cell::sync::Lazy;
@@ -65,7 +62,7 @@ type Executor = for<'a> fn(
     &'a ApplicationCommandInteraction,
     mpsc::UnboundedSender<ToMinecraft>,
     Receiver<ToDiscord>,
-    (&'a Config, &'a Context),
+    &'a Context,
 ) -> BoxFuture<'a, Option<CreateEmbed>>;
 
 /// Command

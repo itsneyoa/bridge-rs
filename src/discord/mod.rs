@@ -5,7 +5,7 @@ mod builders;
 mod commands;
 mod handler;
 
-use crate::{config::Config, prelude::*, ToMinecraft};
+use crate::{config, prelude::*, AsyncOnceCell, ToMinecraft};
 use async_broadcast::Receiver;
 use handler::Handler;
 use serenity::{
@@ -18,6 +18,9 @@ use serenity::{
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use url::Url;
+
+/// The logging webhook
+pub static LOG_WEBHOOK: AsyncOnceCell<Option<(Webhook, Arc<Http>)>> = AsyncOnceCell::new();
 
 /// Embed colour to indicate a successful operation
 const GREEN: Colour = Colour::from_rgb(71, 240, 74);
@@ -40,15 +43,14 @@ impl Discord {
     /// **This does not start running anything - use [`Self::start`]**
     pub(super) async fn new(
         (sender, receiver): (mpsc::UnboundedSender<ToMinecraft>, Receiver<ToDiscord>),
-        config: Config,
     ) -> Result<Self> {
         let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-        let http = HttpBuilder::new(&config.token).build();
+        let http = HttpBuilder::new(&config().token).build();
 
         let channels = Destinations {
-            guild: Self::resolve_channel(&http, config.channels.guild).await?,
-            officer: Self::resolve_channel(&http, config.channels.officer).await?,
+            guild: Self::resolve_channel(&http, config().channels.guild).await?,
+            officer: Self::resolve_channel(&http, config().channels.officer).await?,
         };
 
         let webhooks = Destinations {
@@ -56,11 +58,25 @@ impl Discord {
             officer: Self::resolve_webhook(&http, &channels.officer).await?,
         };
 
-        let handler = Arc::new(Handler::new((sender, receiver), config, channels, webhooks));
+        let handler = Arc::new(Handler::new((sender, receiver), channels, webhooks));
 
         let client = ClientBuilder::new_with_http(http, intents)
             .event_handler_arc(handler.clone())
             .await?;
+
+        let http = client.cache_and_http.http.clone();
+        let log_webhook = if let Some(id) = config().log_channel_id {
+            let log_channel = Self::resolve_channel(&http, id).await?;
+            Some((Self::resolve_webhook(&http, &log_channel).await?, http))
+        } else {
+            None
+        };
+
+        LOG_WEBHOOK
+            .set(log_webhook)
+            .expect("Failed to set log webhook");
+
+        log::warn!("Hello");
 
         Ok(Self { client, handler })
     }

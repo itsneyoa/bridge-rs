@@ -17,25 +17,45 @@ mod minecraft;
 mod output;
 mod prelude;
 
-use config::Config;
+use std::{
+    process::{self, ExitCode},
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use config::get_config as config;
 use discord::{Discord, ToDiscord};
 use dotenv::dotenv;
 use minecraft::{Minecraft, ToMinecraft};
 use once_cell::sync::Lazy;
 use prelude::*;
-use std::process::ExitCode;
 use tokio::sync::{mpsc, Notify};
 
 /// A [`Notify`] instance that is notified when a SIGINT is received
 static SIGINT: Lazy<Notify> = Lazy::new(Notify::new);
+/// [`AtomicBool`] to force exit when Ctrl-C is pressed twice
+static FORCE_EXIT: AtomicBool = AtomicBool::new(false);
+
+/// The 'main' function for the bridge (returning `Result` from `main` uses `Debug` not `Display`)
+async fn bridge() -> Result<()> {
+    ctrlc::set_handler(move || {
+        if FORCE_EXIT.load(Ordering::Relaxed) {
+            process::exit(130)
+        } else {
+            FORCE_EXIT.store(true, Ordering::Relaxed);
+            SIGINT.notify_one()
+        }
+    })
+    .expect("Failed to set Ctrl-C handler");
+
+    dotenv().ok();
+    config::init()?;
+
+    Bridge::create().await
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    ctrlc::set_handler(move || SIGINT.notify_one()).expect("Failed to set Ctrl-C handler");
-    pretty_env_logger::init();
-    dotenv().ok();
-
-    match Bridge::create().await {
+    match bridge().await {
         Ok(_) => ExitCode::SUCCESS,
         Err(BridgeError::SigInt) => ExitCode::from(130),
         Err(err) => {
@@ -65,14 +85,12 @@ impl Bridge {
 
     /// Create a new Bridge instance, setting up the [`Config`](Config) and channels
     async fn new() -> Result<Self> {
-        let config = Config::new()?;
-
         let (minecraft_sender, discord_receiver) = async_broadcast::broadcast::<ToDiscord>(16);
         let (discord_sender, minecraft_receiver) = mpsc::unbounded_channel::<ToMinecraft>();
 
         Ok(Self {
             minecraft: Minecraft::new((minecraft_sender, minecraft_receiver)).await,
-            discord: Discord::new((discord_sender, discord_receiver), config).await?,
+            discord: Discord::new((discord_sender, discord_receiver)).await?,
         })
     }
 

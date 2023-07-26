@@ -2,8 +2,10 @@
 //!
 //! The output types are defined in [`Output`]
 
+use crate::discord::LOG_WEBHOOK;
 use colored::{Color, Colorize};
 use log::*;
+pub(crate) use Output::*;
 
 /// Send a message to `stdout` or `stderr` with a title and colour
 fn output(title: &'static str, colour: Color, message: String, dest: Destination) {
@@ -12,12 +14,21 @@ fn output(title: &'static str, colour: Color, message: String, dest: Destination
 
     match dest {
         Destination::Stdout => {
-            println!("{}", message)
+            println!("{message}")
         }
         Destination::Stderr => {
-            eprintln!("{}", message)
+            eprintln!("{message}")
         }
-    }
+    };
+
+    tokio::spawn(async {
+        if let Some((webhook, http)) = LOG_WEBHOOK.wait().await {
+            webhook
+                .execute(&http, false, |f| f.content(message))
+                .await
+                .ok();
+        }
+    });
 }
 
 /// Send a message to `stdout` or `stderr` with a title and colour
@@ -56,8 +67,6 @@ pub(crate) fn send(message: impl std::fmt::Display, kind: Output) {
         }
     }
 }
-
-pub(crate) use Output::*;
 
 /// The types of output
 pub(crate) enum Output {
