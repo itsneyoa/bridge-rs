@@ -4,6 +4,7 @@ pub mod bridge {
     pub use super::handler::{recv, send};
 }
 
+use crate::config;
 use azalea::{
     app::{Plugin, Update},
     ecs::prelude::*,
@@ -39,10 +40,14 @@ fn handle_incoming_discord_messages(
     use crate::minecraft::bridge::send::ChatCommand as MinecraftChatCommand;
 
     for event in reader.iter() {
-        // TODO: Make me work for /oc
+        let prefix = match event.channel_id.get() {
+            id if id == config().channels.guild => "gc",
+            id if id == config().channels.officer => "oc",
+            _ => return,
+        };
 
         writer.send(MinecraftChatCommand(format!(
-            "/gc {author}: {message}",
+            "/{prefix} {author}: {message}",
             author = event.get_author_display_name(),
             message = event.content_clean(&cache)
         )))

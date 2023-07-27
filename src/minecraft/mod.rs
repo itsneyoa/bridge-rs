@@ -26,20 +26,23 @@ fn handle_incoming_chats(
     use crate::discord::bridge::send::CreateMessage as CreateDiscordMessage;
 
     for event in reader.iter() {
-        match event {
+        let (author, content, channel_id) = match event {
             handler::recv::IncomingEvent::GuildMessage { author, content } => {
-                writer.send(CreateDiscordMessage {
-                    channel_id: config().channels.guild,
-                    content: format!("`{author}`: {content}"),
-                })
+                (author, content, config().channels.guild)
             }
             handler::recv::IncomingEvent::OfficerMessage { author, content } => {
-                writer.send(CreateDiscordMessage {
-                    channel_id: config().channels.officer,
-                    content: format!("`{author}`: {content}"),
-                })
+                (author, content, config().channels.officer)
             }
-            _ => {}
-        }
+
+            _ => return,
+        };
+
+        // TODO: Eventually this'll be replaced with the webhook and just take the value of `content`
+        let content = format!("`{author}`: `{content}`",);
+
+        writer.send(CreateDiscordMessage {
+            channel_id,
+            content,
+        })
     }
 }
