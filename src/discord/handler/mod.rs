@@ -14,14 +14,20 @@ use futures_lite::future::{block_on, poll_once};
 use std::{num::NonZeroU64, ops::Deref, sync::Arc};
 use tokio::sync::mpsc;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::Intents;
-use twilight_gateway::{error::ReceiveMessageError, Event, Shard, ShardId};
+use twilight_gateway::{error::ReceiveMessageError, Event, Intents, Shard, ShardId};
 use twilight_http::{
     request::channel::reaction::RequestReactionType, response::marker::EmptyBody,
     Client as HttpClient, Response,
 };
-use twilight_model::channel::{message::AllowedMentions, Message};
+use twilight_model::{
+    channel::{
+        message::{AllowedMentions, MentionType},
+        Message,
+    },
+    id::Id,
+};
 use twilight_validate::message::MessageValidationError;
+use twilight_webhook::cache::{PermissionsSource, WebhooksCache as RawWebhookCache};
 
 #[derive(Clone)]
 pub struct DiscordHandler {
@@ -32,30 +38,48 @@ pub struct DiscordHandler {
 impl Plugin for DiscordHandler {
     fn build(&self, app: &mut App) {
         app.add_event::<recv::MessageCreate>()
-            .add_event::<send::CreateMessage>()
-            .add_event::<send::CreateReaction>()
-            .add_systems(Update, handle_incoming_events)
+            .add_systems(Update, handle_incoming_events);
+
+        app.add_event::<send::CreateMessage>()
             .add_systems(Update, handle_create_message)
-            .add_systems(Update, handle_create_message_response)
+            .add_systems(Update, handle_create_message_response);
+
+        app.add_event::<send::CreateReaction>()
             .add_systems(Update, handle_create_reaction)
-            .add_systems(Update, handle_empty_body_response)
-            .insert_resource(Internals::new(self.token.clone(), self.intents))
+            .add_systems(Update, handle_empty_body_response);
+
+        app.add_event::<send::ChatMessage>()
+            .add_systems(Update, handle_create_chat_message);
+
+        app.insert_resource(Internals::new(self.token.clone(), self.intents))
             .insert_resource(Cache::new());
     }
+}
+
+#[derive(Resource)]
+struct Internals {
+    http: Arc<HttpClient>,
+    rx: mpsc::UnboundedReceiver<Result<Event, ReceiveMessageError>>,
+    tx: Option<mpsc::UnboundedSender<Result<Event, ReceiveMessageError>>>,
+    shard: Option<Shard>,
+    task: Option<Task<()>>,
+    webhook_cache: Arc<WebhookCache>,
 }
 
 impl Internals {
     pub fn new(token: String, intents: Intents) -> Self {
         let shard = Shard::new(ShardId::ONE, token.clone(), intents);
-        let http = Arc::new(HttpClient::new(token));
+        let http = HttpClient::new(token);
         let (tx, rx) = mpsc::unbounded_channel();
+        let webhook_cache = WebhookCache::default();
 
         Internals {
-            http,
+            http: Arc::new(http),
             rx,
             tx: Some(tx),
             shard: Some(shard),
             task: None,
+            webhook_cache: Arc::new(webhook_cache),
         }
     }
 }
@@ -66,7 +90,7 @@ pub struct Cache(InMemoryCache);
 impl Cache {
     pub fn new() -> Self {
         let cache = InMemoryCache::builder()
-            .resource_types(ResourceType::ROLE | ResourceType::CHANNEL)
+            .resource_types(ResourceType::ROLE | ResourceType::CHANNEL | ResourceType::USER_CURRENT)
             .build();
 
         Self(cache)
@@ -81,13 +105,15 @@ impl Deref for Cache {
     }
 }
 
-#[derive(Resource)]
-struct Internals {
-    http: Arc<HttpClient>,
-    rx: mpsc::UnboundedReceiver<Result<Event, ReceiveMessageError>>,
-    tx: Option<mpsc::UnboundedSender<Result<Event, ReceiveMessageError>>>,
-    shard: Option<Shard>,
-    task: Option<Task<()>>,
+#[derive(Resource, Default)]
+pub struct WebhookCache(RawWebhookCache);
+
+impl Deref for WebhookCache {
+    type Target = RawWebhookCache;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 async fn loop_get_next_events(
@@ -134,6 +160,14 @@ fn handle_incoming_events(
 
         log::trace!("{event:?}");
         cache.update(&event);
+        if let Err(e) = block_on(Compat::new(discord.webhook_cache.update(
+            &event,
+            &discord.http,
+            // The `permissions` argument should rarely be used, as it's only needed when a `WebhookUpdate` event is recieved
+            PermissionsSource::Request,
+        ))) {
+            eprintln!("error updating webhook cache {e}")
+        };
 
         match event {
             Event::Ready(ready) => {
@@ -244,5 +278,47 @@ fn handle_empty_body_response(
         commands
             .entity(entity)
             .remove::<DiscordResponseTask<EmptyBody>>();
+    }
+}
+
+fn handle_create_chat_message(
+    mut commands: Commands,
+    discord: Res<Internals>,
+    mut reader: EventReader<send::ChatMessage>,
+) {
+    let task_pool = IoTaskPool::get();
+
+    for message in reader.iter() {
+        let http = discord.http.clone();
+        let webhook_cache = discord.webhook_cache.clone();
+
+        let content = message.content.clone();
+        let author = message.author.clone();
+        let chat = message.chat;
+
+        let task = task_pool.spawn(Compat::new(async move {
+            let webhook = webhook_cache
+                .get_infallible(&http, Id::new(chat.into()), "Bridge")
+                .await
+                .expect("Failed to get webhook");
+
+            Ok(http
+                .execute_webhook(
+                    webhook.id,
+                    webhook.token.as_ref().expect("Webhook has no token"),
+                )
+                .username(&author)?
+                .avatar_url(&format!("https://mc-heads.net/avatar/{author}/512"))
+                .content(&content)?
+                .allowed_mentions(Some(&AllowedMentions {
+                    parse: vec![MentionType::Users],
+                    replied_user: false,
+                    roles: vec![],
+                    users: vec![],
+                }))
+                .await)
+        }));
+
+        commands.spawn(DiscordResponseTask(task));
     }
 }

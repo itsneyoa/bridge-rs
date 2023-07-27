@@ -1,0 +1,15 @@
+[package]
+name = "twilight-webhook"
+version = "0.15.0"
+edition = "2021"
+
+[dependencies]
+dashmap = "5.5.0"
+thiserror = "1.0.44"
+twilight-cache-inmemory = { version = "0.15.2", features = ["permission-calculator"] }
+twilight-http = "0.15.2"
+twilight-model = "0.15.2"
+twilight-validate = "0.15.1"
+
+[dev-dependencies]
+tokio = { version = "1.29.1", features = ["macros"] }

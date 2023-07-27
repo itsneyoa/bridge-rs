@@ -22,7 +22,10 @@ impl BridgeDiscordPlugin {
 
 impl Plugin for BridgeDiscordPlugin {
     fn build(&self, app: &mut azalea::app::App) {
-        let intents = Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT;
+        let intents = Intents::GUILDS
+            | Intents::GUILD_MESSAGES
+            | Intents::MESSAGE_CONTENT
+            | Intents::GUILD_WEBHOOKS;
 
         app.add_plugins(DiscordHandler {
             token: self.0.to_string(),

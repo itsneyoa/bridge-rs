@@ -1,4 +1,6 @@
-use super::*;
+use azalea::{ecs::prelude::*, prelude::*};
+
+use crate::plugin::Chat;
 
 #[derive(Event, Debug)]
 pub struct CreateMessage {
@@ -11,4 +13,11 @@ pub struct CreateReaction {
     pub channel_id: u64,
     pub message_id: u64,
     pub emoji: char,
+}
+
+#[derive(Event, Debug)]
+pub struct ChatMessage {
+    pub chat: Chat,
+    pub author: String,
+    pub content: String,
 }

@@ -15,7 +15,7 @@ _To do_
 ## To Do
 
 -   [x] Route messages to the right chat (guild or officer)
--   [ ] Webhooks for discord incoming messages
+-   [x] Webhooks for discord incoming messages
 -   [ ] Sanitise and trim discord messages (max length 256, no illegal characters)
 -   [ ] Online/Offline messages
 -   [ ] Connected/Disconnected messages
