@@ -1,0 +1,8 @@
+# Build
+/target
+
+# Testing Server
+/server
+
+# Secrets
+.env
