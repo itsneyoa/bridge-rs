@@ -13,12 +13,23 @@ use azalea::{
 pub use config::config;
 pub use errors::Error;
 use plugin::BridgePlugin;
+use std::panic;
 
 #[tokio::main]
 async fn main() -> errors::Result<()> {
     pretty_env_logger::init();
     dotenvy::dotenv().ok();
     config::init()?;
+
+    {
+        // Quit the app on any panics, usually bevy just prints them and continues
+
+        let panic_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |panic_info| {
+            panic_hook(panic_info);
+            std::process::exit(1);
+        }));
+    }
 
     {
         use parking_lot::deadlock::check_deadlock;
