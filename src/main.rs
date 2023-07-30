@@ -3,6 +3,7 @@ mod discord;
 mod errors;
 mod minecraft;
 mod plugin;
+mod sanitizer;
 
 use azalea::{
     app::PluginGroup,

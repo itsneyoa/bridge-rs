@@ -29,7 +29,6 @@ use twilight_model::{
 use twilight_validate::message::MessageValidationError;
 use twilight_webhook::cache::{PermissionsSource, WebhooksCache as RawWebhookCache};
 
-#[derive(Clone)]
 pub struct DiscordHandler {
     pub token: String,
     pub intents: Intents,
@@ -257,9 +256,7 @@ fn handle_create_reaction(
                 .create_reaction(
                     NonZeroU64::try_from(channel_id).unwrap().into(),
                     NonZeroU64::try_from(message_id).unwrap().into(),
-                    &RequestReactionType::Unicode {
-                        name: &emoji.to_string(),
-                    },
+                    &RequestReactionType::Unicode { name: emoji },
                 )
                 .await)
         }));

@@ -1,4 +1,4 @@
-use super::Cache;
+use super::{super::reactions::Reaction, Cache};
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_replace_all;
 use std::ops::Deref;
@@ -80,5 +80,14 @@ impl MessageCreate {
         .to_string();
 
         result
+    }
+
+    #[must_use = "Reaction must be sent using an EventWriter"]
+    pub fn react(&self, reaction: Reaction) -> super::send::CreateReaction {
+        super::send::CreateReaction {
+            channel_id: self.channel_id.get(),
+            message_id: self.id.get(),
+            emoji: reaction.emoji(),
+        }
     }
 }

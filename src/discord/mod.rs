@@ -1,15 +1,16 @@
 mod handler;
+mod reactions;
 
 pub mod bridge {
     pub use super::handler::{recv, send};
 }
 
-use crate::config;
+use crate::{config, sanitizer::CleanString};
 use azalea::{
     app::{Plugin, Update},
     ecs::prelude::*,
 };
-use handler::{recv, DiscordHandler};
+use handler::{recv, send, DiscordHandler};
 use twilight_gateway::Intents;
 
 pub struct BridgeDiscordPlugin(&'static str);
@@ -37,22 +38,39 @@ impl Plugin for BridgeDiscordPlugin {
 
 fn handle_incoming_discord_messages(
     mut reader: EventReader<recv::MessageCreate>,
-    mut writer: EventWriter<crate::minecraft::bridge::send::ChatCommand>,
+    mut chat_writer: EventWriter<crate::minecraft::bridge::send::ChatCommand>,
+    mut reaction_writer: EventWriter<send::CreateReaction>,
     cache: Res<handler::Cache>,
 ) {
     use crate::minecraft::bridge::send::ChatCommand as MinecraftChatCommand;
 
     for event in reader.iter() {
+        let (author, author_cleaned) =
+            CleanString::new(event.get_author_display_name().to_string());
+        let (message, message_cleaned) = CleanString::new(event.content_clean(&cache).to_string());
+
+        if author.is_empty() || message.is_empty() {
+            reaction_writer.send(event.react(reactions::EMPTY_FIELD));
+            continue;
+        }
+
         let prefix = match event.channel_id.get() {
             id if id == config().channels.guild => "gc",
             id if id == config().channels.officer => "oc",
             _ => return,
         };
 
-        writer.send(MinecraftChatCommand(format!(
-            "/{prefix} {author}: {message}",
-            author = event.get_author_display_name(),
-            message = event.content_clean(&cache)
-        )))
+        let mut command = format!("/{prefix} ").as_str() + author + ": " + message;
+
+        if author_cleaned || message_cleaned {
+            reaction_writer.send(event.react(reactions::ILLEGAL_CHARACTERS));
+        }
+
+        if command.len() > 256 {
+            reaction_writer.send(event.react(reactions::TOO_LONG));
+            command.truncate(256);
+        }
+
+        chat_writer.send(MinecraftChatCommand(command))
     }
 }

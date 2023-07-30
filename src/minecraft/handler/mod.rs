@@ -6,7 +6,9 @@ use azalea::{
     chat::{ChatReceivedEvent, SendChatEvent},
     ecs::prelude::*,
     entity::Local,
+    prelude::*,
 };
+use bevy_tasks::Task;
 
 pub struct MinecraftHandler;
 
@@ -18,6 +20,9 @@ impl Plugin for MinecraftHandler {
             .add_systems(Update, handle_outgoing_chats);
     }
 }
+
+#[derive(Component)]
+pub struct MinecraftResponseTask<T>(Task<Result<T, anyhow::Error>>);
 
 fn handle_incoming_chats(
     mut reader: EventReader<ChatReceivedEvent>,
@@ -45,7 +50,6 @@ fn handle_outgoing_chats(
 
         log::debug!("Sending to Minecraft: {}", event.0);
 
-        // TODO: Add validation
         // TODO: Add cooldown
 
         writer.send(SendChatEvent {

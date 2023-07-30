@@ -12,7 +12,7 @@ pub struct CreateMessage {
 pub struct CreateReaction {
     pub channel_id: u64,
     pub message_id: u64,
-    pub emoji: char,
+    pub emoji: &'static str,
 }
 
 #[derive(Event, Debug)]

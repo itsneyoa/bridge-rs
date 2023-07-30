@@ -16,7 +16,7 @@ _To do_
 
 -   [x] Route messages to the right chat (guild or officer)
 -   [x] Webhooks for discord incoming messages
--   [ ] Sanitise and trim discord messages (max length 256, no illegal characters)
+-   [x] Sanitise and trim discord messages (max length 256, no illegal characters)
 -   [ ] Online/Offline messages
 -   [ ] Connected/Disconnected messages
 -   [ ] Discord slash commands
@@ -25,3 +25,4 @@ _To do_
 -   [ ] Emoji feedback on discord outgoing messages
 -   [ ] Command retries for `You are sending commands too fast!`
 -   [ ] Handle getting disconnected from minecraft server
+-   [ ] Improve the illegal character detection (some valid emojis don't work)
