@@ -38,7 +38,7 @@ impl EventHandler for Handler {
                 format_args!("{}#{}", client.user.name, client.user.discriminator)
             );
             info!("{}", message);
-            output::send(&message, output::Info);
+            output::log((&message, output::Info));
         }
 
         self.channels
@@ -294,32 +294,49 @@ impl EventHandler for Handler {
             _ => return,
         };
 
-        output::send(
+        output::log((
             format!("{}: {}", msg.author.tag(), msg.content_safe(&ctx.cache)),
             output::Message,
-        );
+        ));
 
-        let (message, dirt) = format!(
+        if let Some((message, dirt)) = format!(
             "{}: {}",
             msg.author_nick(&ctx.http)
                 .await
                 .unwrap_or(msg.author.name.clone()),
             msg.content_safe(&ctx.cache)
         )
-        .sanitise();
+        .sanitise()
+        {
+            for dirt in dirt {
+                msg.react(&ctx.http, ReactionType::Unicode(dirt.emoji.to_string()))
+                    .await
+                    .map_err(|e| e.into())
+                    .failable();
+            }
 
-        for dirt in dirt {
-            msg.react(&ctx.http, ReactionType::Unicode(dirt.emoji().to_string()))
+            let (tx, rx) = oneshot::channel();
+
+            self.sender
+                .send(ToMinecraft::Message(message, chat, tx))
+                .expect("Discord command reciever dropped before being notified");
+
+            let problems = rx
+                .await
+                .expect("Discord to Minecraft message sender dropped before sending");
+
+            for dirt in problems {
+                msg.react(&ctx.http, ReactionType::Unicode(dirt.emoji.to_string()))
+                    .await
+                    .map_err(|e| e.into())
+                    .failable();
+            }
+        } else {
+            msg.react(&ctx.http, ReactionType::Unicode("❌".to_string()))
                 .await
                 .map_err(|e| e.into())
                 .failable();
         }
-
-        let (tx, _rx) = oneshot::channel();
-
-        self.sender
-            .send(ToMinecraft::Message(message, chat, tx))
-            .expect("Discord command reciever dropped before being notified");
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
@@ -329,7 +346,7 @@ impl EventHandler for Handler {
 
         match interaction {
             ApplicationCommand(interaction) => {
-                output::send(
+                output::log((
                     format!(
                         "{}#{} ran {}",
                         interaction.user.name,
@@ -337,7 +354,7 @@ impl EventHandler for Handler {
                         interaction.data.name
                     ),
                     output::Command,
-                );
+                ));
 
                 interaction
                     .defer(&ctx.http)

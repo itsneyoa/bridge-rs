@@ -65,7 +65,7 @@ pub static KICK_COMMAND: Command = Command {
                 }
                 ToDiscord::Raw(msg) => {
                     if msg == "Invalid usage! '/guild kick <player> <reason>'" {
-                        output::send("Guild kick reason not found", output::Warn);
+                        output::log(("Guild kick reason not found", output::Warn));
                         return Some(Err("Missing reason".to_string()));
                     }
 

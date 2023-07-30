@@ -4,67 +4,85 @@
 
 use crate::discord::LOG_WEBHOOK;
 use colored::{Color, Colorize};
-use log::*;
+use serenity::{
+    json::Value,
+    model::{prelude::Embed, Timestamp},
+};
 pub(crate) use Output::*;
 
-/// Send a message to `stdout` or `stderr` with a title and colour
-fn output(title: &'static str, colour: Color, message: String, dest: Destination) {
-    let title = format!("[{}]", title).color(colour);
-    let message = format!("{title}: {message}");
+/// Trait to allow structs to be logged to the console and optionally Discord
+pub trait Loggable {
+    /// Turn `Self` into a Title, Colour, Message and Destination
+    fn console(&self) -> (&'static str, Color, String, Destination);
 
-    match dest {
-        Destination::Stdout => {
-            println!("{message}")
-        }
-        Destination::Stderr => {
-            eprintln!("{message}")
-        }
-    };
-
-    tokio::spawn(async {
-        if let Some((webhook, http)) = LOG_WEBHOOK.wait().await {
-            webhook
-                .execute(&http, false, |f| f.content(message))
-                .await
-                .ok();
-        }
-    });
+    /// Turn `Self` into an [`Embed`] for Discord output
+    fn discord(&self) -> Option<Value> {
+        None
+    }
 }
 
-/// Send a message to `stdout` or `stderr` with a title and colour
-pub(crate) fn send(message: impl std::fmt::Display, kind: Output) {
-    let message = message.to_string();
+impl<S: ToString> Loggable for (S, Output) {
+    fn console(&self) -> (&'static str, Color, String, Destination) {
+        let (title, colour, destination) = match self.1 {
+            Error => ("Error", Color::Red, Destination::Stderr),
+            Warn => ("Warn", Color::Yellow, Destination::Stderr),
+            Info => ("Info", Color::Green, Destination::Stdout),
+            Chat => ("Chat", Color::Cyan, Destination::Stdout),
+            Message => ("Message", Color::Magenta, Destination::Stdout),
+            Command => ("Command", Color::BrightBlack, Destination::Stdout),
+            Execute => ("Execute", Color::BrightBlack, Destination::Stdout),
+        };
 
-    match kind {
-        Output::Error => {
-            error!("{}", message);
-            output("Error", Color::Red, message, Destination::Stderr)
-        }
-        Output::Warn => {
-            warn!("{}", message);
-            output("Warn", Color::Yellow, message, Destination::Stderr)
-        }
-        Output::Info => {
-            info!("{}", message);
-            output("Info", Color::Green, message, Destination::Stdout)
-        }
-        Output::Chat => {
-            debug!("Minecraft Chat: {}", message);
-            output("Chat", Color::Cyan, message, Destination::Stdout)
-        }
-        Output::Message => {
-            debug!("Discord Message: {}", message);
-            output("Message", Color::Magenta, message, Destination::Stdout)
-        }
-        Output::Command => {
-            debug!("Discord Command: {}", message);
-            output("Command", Color::Blue, message, Destination::Stdout)
-        }
-        Output::Execute => {
-            let command = format!("/{message}");
-            debug!("Executing `{}`", command);
-            output("Execute", Color::BrightBlack, command, Destination::Stdout)
-        }
+        (title, colour, self.0.to_string(), destination)
+    }
+
+    fn discord(&self) -> Option<Value> {
+        let (title, colour) = match self.1 {
+            Error => ("Error", Some(0xf04a47)),
+            Warn => ("Warning", Some(0xff8c00)),
+            Info => ("Info", None),
+            Chat => ("Chat", None),
+            Message => ("Message", None),
+            Command => ("Command", None),
+            Execute => ("Execute", Some(0xedf047)),
+        };
+
+        Some(Embed::fake(|embed| {
+            let embed = embed
+                .author(|author| author.name(title.to_string()))
+                .description(self.0.to_string())
+                .timestamp(Timestamp::now());
+
+            if let Some(colour) = colour {
+                embed.color(colour)
+            } else {
+                embed
+            }
+        }))
+    }
+}
+
+/// Log a message to the console and Discord if applicable
+pub fn log(item: impl Loggable) {
+    let (title, colour, message, destination) = item.console();
+    let output = format!(
+        "{title} {message}",
+        title = format_args!("[{title}]").to_string().color(colour)
+    );
+    match destination {
+        Destination::Stdout => println!("{output}"),
+        Destination::Stderr => eprintln!("{output}"),
+    }
+
+    if let Some(embed) = item.discord() {
+        tokio::spawn(async {
+            if let Some((webhook, http)) = LOG_WEBHOOK.wait().await {
+                webhook
+                    .execute(&http, false, |f| f.embeds(vec![embed]))
+                    .await
+                    .ok();
+            }
+        });
     }
 }
 
@@ -87,7 +105,7 @@ pub(crate) enum Output {
 }
 
 /// The output a message can be sent to
-enum Destination {
+pub enum Destination {
     /// Standard output
     Stdout,
     /// Standard error

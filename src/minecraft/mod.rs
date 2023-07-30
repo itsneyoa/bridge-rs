@@ -3,7 +3,11 @@
 mod chat;
 mod handler;
 
-use crate::{output, prelude::*, ToDiscord};
+use crate::{
+    output::{self, Loggable},
+    prelude::{sanitiser::RuntimeDirt, *},
+    ToDiscord,
+};
 use async_broadcast::Sender;
 use azalea::{Account, Client};
 use std::sync::Arc;
@@ -105,10 +109,10 @@ impl Minecraft {
 
             let mut delay = delay.lock().await;
 
-            output::send(
+            output::log((
                 format!("Disconnected from server for `{reason}`. Reconnecting in {delay:?}."),
                 output::Warn,
-            );
+            ));
             self.sender
                 .broadcast(ToDiscord::Disconnect(reason))
                 .await
@@ -125,7 +129,7 @@ impl Minecraft {
 impl<A, B> Failable for Result<Option<A>, async_broadcast::SendError<B>> {
     fn failable(self) {
         if let Err(e) = self {
-            output::send(e, output::Error);
+            output::log(e);
         }
     }
 }
@@ -133,25 +137,53 @@ impl<A, B> Failable for Result<Option<A>, async_broadcast::SendError<B>> {
 impl<E> Failable for Result<(), mpsc::error::SendError<E>> {
     fn failable(self) {
         if let Err(e) = self {
-            output::send(e, output::Error);
+            output::log(e);
         }
     }
 }
 
-/// Send a Minecraft chat message **without** azalea sanitising it
-trait UncheckedSend {
-    /// Send a message to the Minecraft server
-    fn unchecked_send_command_packet(&self, message: impl Into<String>);
+impl<T> Loggable for tokio::sync::mpsc::error::SendError<T> {
+    fn console(&self) -> (&'static str, colored::Color, String, output::Destination) {
+        (
+            "Send Error",
+            colored::Color::Red,
+            self.to_string(),
+            output::Destination::Stderr,
+        )
+    }
 }
 
-impl UncheckedSend for Client {
-    fn unchecked_send_command_packet(&self, message: impl Into<String>) {
+impl<T> Loggable for async_broadcast::SendError<T> {
+    fn console(&self) -> (&'static str, colored::Color, String, output::Destination) {
+        (
+            "Send Error",
+            colored::Color::Red,
+            self.to_string(),
+            output::Destination::Stderr,
+        )
+    }
+}
+
+/// Send a Minecraft chat message and get the result of the execution
+trait ChatWithFeedback {
+    fn send(&self, message: impl ToString, safe: bool) -> Vec<RuntimeDirt>;
+
+    /// Send a message to the Minecraft server
+    fn unchecked_send_command_packet(&self, message: impl ToString);
+}
+
+impl ChatWithFeedback for Client {
+    fn send(&self, message: impl ToString, safe: bool) -> Vec<RuntimeDirt> {
+        
+    }
+
+    fn unchecked_send_command_packet(&self, message: impl ToString) {
         use azalea::protocol::packets::game::serverbound_chat_command_packet::ServerboundChatCommandPacket;
         use std::time::{SystemTime, UNIX_EPOCH};
 
         self.write_packet(
             ServerboundChatCommandPacket {
-                command: message.into(),
+                command: message.to_string(),
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time shouldn't be before epoch")
@@ -169,23 +201,23 @@ impl UncheckedSend for Client {
 
 #[derive(Debug)]
 /// A Payload sent from Discord to Minecraft
-pub enum ToMinecraft {
+pub enum ToMinecraft<S = oneshot::Sender<Vec<RuntimeDirt>>> {
     /// A command to send to Minecraft
     Command {
         /// The command to send to Minecraft. This should not include a trailing slash.
         command: String,
         /// The oneshot channel to notify when the message has been sent to Minecraft
-        notify: oneshot::Sender<()>,
+        notify: S,
         /// Whether or not to check the message against the Minecraft valid charset
         unchecked: bool,
     },
     /// A message to send to Minecraft
-    Message(String, Chat, oneshot::Sender<()>),
+    Message(String, Chat, S),
 }
 
 impl ToMinecraft {
     /// Create a new instance of [`FromDiscord`]
-    pub fn command(command: String, notify: oneshot::Sender<()>) -> Self {
+    pub fn command(command: String, notify: oneshot::Sender<Vec<RuntimeDirt>>) -> Self {
         Self::Command {
             command,
             notify,
@@ -195,7 +227,7 @@ impl ToMinecraft {
 
     /// Create a new instance of [`FromDiscord`] which should not be sanisized for illegal characters
     #[allow(unused)]
-    pub fn new_unchecked(command: String, notify: oneshot::Sender<()>) -> Self {
+    pub fn new_unchecked(command: String, notify: oneshot::Sender<Vec<RuntimeDirt>>) -> Self {
         Self::Command {
             command,
             notify,
@@ -204,14 +236,14 @@ impl ToMinecraft {
     }
 
     /// Get the notifier
-    pub fn notify(self) {
+    pub fn notify(self, dirt: Vec<RuntimeDirt>) {
         let notify = match self {
             ToMinecraft::Command { notify, .. } => notify,
             ToMinecraft::Message(_, _, notify) => notify,
         };
 
-        notify.send(()).ok();
-        // .expect("Discord to Minecraft message reciever dropped before being notified")
-        // TODO: When Discord -> Minecraft message checking is implemented, this should panic on oneshot reciever drop
+        notify
+            .send(dirt)
+            .expect("Discord to Minecraft message reciever dropped before being notified");
     }
 }

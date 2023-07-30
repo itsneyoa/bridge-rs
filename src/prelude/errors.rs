@@ -1,5 +1,7 @@
 //! Error types for the Bridge
 
+use crate::output::{Destination, Loggable};
+use colored::Color;
 use thiserror::Error;
 
 /// All error variants for the Bridge
@@ -30,4 +32,25 @@ pub enum BridgeError {
     /// Other error
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl Loggable for BridgeError {
+    fn console(
+        &self,
+    ) -> (
+        &'static str,
+        colored::Color,
+        String,
+        crate::output::Destination,
+    ) {
+        match self {
+            BridgeError::Other(_) => (
+                "Warning",
+                Color::Yellow,
+                self.to_string(),
+                Destination::Stderr,
+            ),
+            _ => ("Error", Color::Red, self.to_string(), Destination::Stderr),
+        }
+    }
 }

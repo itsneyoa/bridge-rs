@@ -59,7 +59,7 @@ async fn main() -> ExitCode {
         Ok(_) => ExitCode::SUCCESS,
         Err(BridgeError::SigInt) => ExitCode::from(130),
         Err(err) => {
-            output::send(err, output::Error);
+            output::log(err);
             ExitCode::FAILURE
         }
     }
@@ -96,7 +96,7 @@ impl Bridge {
 
     /// Start both halves of the Bridge
     async fn start(self) -> Result<()> {
-        output::send("Starting Bridge", output::Info);
+        output::log(("Starting Bridge", output::Info));
 
         tokio::try_join!(
             self.discord.start(),
@@ -110,18 +110,18 @@ impl Bridge {
     /// Wait for a SIGINT and then shut down the bridge
     async fn shutdown() -> Result<()> {
         SIGINT.notified().await;
-        output::send("Shutting down...", output::Info);
+        output::log(("Shutting down...", output::Info));
 
         tokio::spawn(async {
             let duration = std::time::Duration::from_secs(1);
             tokio::time::sleep(duration).await;
-            output::send(
+            output::log((
                 format!(
                     "Clean shutdown took too long (> {:?}), forcing exit",
                     duration
                 ),
                 output::Error,
-            );
+            ));
             std::process::exit(130);
         });
 

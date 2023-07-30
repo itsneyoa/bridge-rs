@@ -1,6 +1,6 @@
 # Bridge
 
-> 🛑 This is not usable yet - see [To Do](#to-do)
+> 🛑 This branch is no longer maintained, as I've switched to using a bevy plugin. Check out the main branch!
 
 > ⚠️ Hypixel has historically banned accounts running bot software as Azalea is not a regular client. Use at your own risk!
 
@@ -28,7 +28,7 @@
 - [x] Online/offline messages
 - [x] Console Logging (`RUST_LOG`)
 - [x] Console Logging (`stdout`)
-- [ ] Discord Logging
+- [x] Discord Logging
 - [x] Clean up error handling
 - [ ] Chat message feedback (emojis)
 - [ ] Command retries for `You are sending commands too fast!`

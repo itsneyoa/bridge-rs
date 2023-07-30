@@ -1,76 +1,99 @@
 //! Sanitise chat messages to prevent exploits and validate if messages sent
 
 use lazy_regex::regex_replace_all;
+use once_cell::sync::Lazy;
 
 /// An emoji to react with and its acompanying description
 #[derive(Debug, PartialEq)]
-pub struct Dirt(&'static str, &'static str);
+pub struct Dirt {
+    /// The emoji to react with
+    pub emoji: &'static str,
+    /// The description of what the emoji means
+    pub description: &'static str,
+}
+
+/// An emoji to react with and its acompanying description
+#[derive(Debug, PartialEq)]
+pub struct RuntimeDirt {
+    /// The emoji to react with
+    pub emoji: &'static str,
+    /// The description of what the emoji means
+    pub description: &'static str,
+}
 
 /// The different types of errors which can occur when sanitising a message
-pub const DIRT_VARIENTS: [Dirt; 7] = [
-    TOO_LONG,
-    INVALID_CHARACTERS,
-    EMPTY_MESSAGE,
-    BLOCKED,
-    TIMED_OUT,
-    REPEAT_MESSAGE,
-    UNKNOWN_COMMAND,
-];
+pub static DIRT_VARIENTS: Lazy<Vec<String>> = Lazy::new(|| {
+    vec![
+        TOO_LONG.to_string(),
+        INVALID_CHARACTERS.to_string(),
+        (Dirt {
+            emoji: "❌",
+            description: "The message had no content once the input was sanitised",
+        })
+        .to_string(),
+        BLOCKED.to_string(),
+        TIMED_OUT.to_string(),
+        REPEAT_MESSAGE.to_string(),
+        UNKNOWN_COMMAND.to_string(),
+    ]
+});
 
-impl Dirt {
-    /// Get the emoji to react with
-    pub fn emoji(&self) -> &'static str {
-        self.0
+impl ToString for Dirt {
+    fn to_string(&self) -> String {
+        format!("`{}` {}", self.emoji, self.description)
     }
+}
 
-    /// Get the description
-    pub fn description(&self) -> &'static str {
-        self.1
+impl ToString for RuntimeDirt {
+    fn to_string(&self) -> String {
+        format!("`{}` {}", self.emoji, self.description)
     }
 }
 
 /// The message was too long
-pub(crate) const TOO_LONG: Dirt = Dirt(
-    "✂️",
-    "The message was greater than 256 characters and had to be trimmed",
-);
+pub(crate) const TOO_LONG: Dirt = Dirt {
+    emoji: "✂️",
+    description: "The message was greater than 256 characters and had to be trimmed",
+};
 
 /// The message contained invalid characters
-pub(crate) const INVALID_CHARACTERS: Dirt = Dirt(
-    "⚠️",
-    "The message you sent or your nickname contain invalid characters",
-);
-
-/// The message had no content once the input was sanitised
-pub(crate) const EMPTY_MESSAGE: Dirt = Dirt(
-    "❌",
-    "The message had no content once the input was sanitised",
-);
+pub(crate) const INVALID_CHARACTERS: Dirt = Dirt {
+    emoji: "⚠️",
+    description: "The message you sent or your nickname contain invalid characters",
+};
 
 /// The message was blocked by Hypixels chat filter
-pub(crate) const BLOCKED: Dirt = Dirt("⛔", "The message was blocked by Hypixel's chat filter");
+pub(crate) const BLOCKED: RuntimeDirt = RuntimeDirt {
+    emoji: "⛔",
+    description: "The message was blocked by Hypixel's chat filter",
+};
 
 /// The message response search timed out after 10 seconds
-pub(crate) const TIMED_OUT: Dirt = Dirt(
-    "⏱️",
-    "The message response search timed out after 10 seconds",
-);
+pub(crate) const TIMED_OUT: RuntimeDirt = RuntimeDirt {
+    emoji: "⏱️",
+    description: "The message response search timed out after 10 seconds",
+};
 
 /// You cannot say the same message twice
-pub(crate) const REPEAT_MESSAGE: Dirt = Dirt("🔁", "You cannot say the same message twice");
+pub(crate) const REPEAT_MESSAGE: RuntimeDirt = RuntimeDirt {
+    emoji: "🔁",
+    description: "You cannot say the same message twice",
+};
 
 /// The command which needs to be run was not found
-pub(crate) const UNKNOWN_COMMAND: Dirt =
-    Dirt("❓", "The command which needs to be run was not found");
+pub(crate) const UNKNOWN_COMMAND: RuntimeDirt = RuntimeDirt {
+    emoji: "❓",
+    description: "The command which needs to be run was not found",
+};
 
 /// Trait to check if a message is clean and to clean it
 pub trait Sanitise: Sized {
     /// Clean up a message
-    fn sanitise(self) -> (Self, Vec<Dirt>);
+    fn sanitise(self) -> Option<(Self, Vec<Dirt>)>;
 }
 
 impl Sanitise for String {
-    fn sanitise(mut self) -> (Self, Vec<Dirt>) {
+    fn sanitise(mut self) -> Option<(Self, Vec<Dirt>)> {
         let mut dirt = vec![];
 
         {
@@ -79,6 +102,10 @@ impl Sanitise for String {
                 &self,
                 |_| ""
             ).trim_end().to_string();
+
+            if cleaned.is_empty() {
+                return None;
+            }
 
             if cleaned != self {
                 dirt.push(INVALID_CHARACTERS);
@@ -92,7 +119,7 @@ impl Sanitise for String {
             dirt.push(TOO_LONG);
         }
 
-        (self, dirt)
+        Some((self, dirt))
     }
 }
 
@@ -102,28 +129,32 @@ mod tests {
 
     #[test]
     fn valid() {
-        let (cleaned, dirt) = String::from("Hello, world!").sanitise();
+        let (cleaned, dirt) = String::from("Hello, world!")
+            .sanitise()
+            .expect("Failed to sanitise");
         assert_eq!(cleaned, "Hello, world!");
         assert!(dirt.is_empty());
     }
 
     #[test]
     fn clean() {
-        let (cleaned, dirt) = String::from("neyoa 💖").sanitise();
+        let (cleaned, dirt) = String::from("neyoa 💖")
+            .sanitise()
+            .expect("Failed to sanitise");
         assert_eq!(cleaned, "neyoa");
         assert_eq!(dirt, [INVALID_CHARACTERS]);
     }
 
     #[test]
     fn truncate() {
-        let (cleaned, dirt) = "a".repeat(500).sanitise();
+        let (cleaned, dirt) = "a".repeat(500).sanitise().expect("Failed to sanitise");
         assert_eq!(cleaned, "a".repeat(256));
         assert_eq!(dirt, [TOO_LONG]);
     }
 
     #[test]
     fn clean_truncate() {
-        let (cleaned, dirt) = "a💖".repeat(500).sanitise();
+        let (cleaned, dirt) = "a💖".repeat(500).sanitise().expect("Failed to sanitise");
         assert_eq!(cleaned, "a".repeat(256));
         assert_eq!(dirt, [INVALID_CHARACTERS, TOO_LONG]);
     }

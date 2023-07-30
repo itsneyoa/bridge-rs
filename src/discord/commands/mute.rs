@@ -95,7 +95,7 @@ pub static MUTE_COMMAND: Command = Command {
                     }
 
                     if msg == "Invalid time format! Try 7d, 1d, 6h, 1h" {
-                        output::send("Invalid mute length", output::Warn);
+                        output::log(("Invalid mute length", output::Warn));
                         return Some(Err("Invalid mute length".to_string()));
                     }
 

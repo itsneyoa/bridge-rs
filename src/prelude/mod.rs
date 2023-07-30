@@ -30,7 +30,7 @@ pub trait Failable {
 impl<T> Failable for Result<T> {
     fn failable(self) {
         if let Err(e) = self {
-            crate::output::send(e, crate::output::Warn);
+            crate::output::log(e);
         }
     }
 }

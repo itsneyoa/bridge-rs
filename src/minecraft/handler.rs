@@ -1,7 +1,7 @@
 //! Handle all incoming Minecraft events
 
 use super::{chat, ToDiscord, HOST};
-use crate::{minecraft::UncheckedSend, output, prelude::*, ToMinecraft};
+use crate::{minecraft::ChatWithFeedback, output, prelude::*, ToMinecraft};
 use azalea::{app::PluginGroup, prelude::*, ClientInformation, DefaultBotPlugins, DefaultPlugins};
 use lazy_regex::regex_replace_all;
 use std::{sync::Arc, time::Duration};
@@ -70,14 +70,14 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
             trace!("{event:?}");
             reset_delay.notify_waiters();
 
-            output::send(
+            output::log((
                 format!(
                     "Connected to `{}` as `{}`",
                     super::HOST,
                     client.profile.name
                 ),
                 output::Info,
-            );
+            ));
 
             discord_sender
                 .broadcast(ToDiscord::Connect(client.profile.name.clone()))
@@ -95,14 +95,11 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
                     }
                 };
 
-                output::send(&command, output::Execute);
+                output::log((&command, output::Execute));
 
-                match unchecked {
-                    true => client.unchecked_send_command_packet(&command),
-                    false => client.send_command_packet(&command),
-                };
+                let dirt = client.send(&command, !unchecked);
 
-                payload.notify();
+                payload.notify(dirt);
 
                 // How long to wait between sending commands
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -114,7 +111,7 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
             // Remove leading and trailing `-` characters
             let content = regex_replace_all!(r"^-*|-*$", &packet.content(), |_| "").to_string();
 
-            output::send(&content, output::Chat);
+            output::log((&content, output::Chat));
 
             if let Some(msg) = chat::handle(&content) {
                 discord_sender.broadcast(msg).await.failable();
@@ -142,7 +139,7 @@ pub(super) async fn handle(client: Client, event: Event, state: State) -> anyhow
                 }
                 Respawn(packet) => {
                     if packet.data_to_keep == 1 {
-                        output::send("A new world has been joined", output::Info);
+                        output::log(("A new world has been joined", output::Info));
                     }
                 }
                 _ => {}
