@@ -19,6 +19,7 @@ use azalea::{
 };
 use handler::{recv, send, DiscordHandler};
 use once_cell::sync::Lazy;
+use recv::MessageExt;
 use twilight_gateway::Intents;
 use twilight_http::Client as HttpClient;
 
@@ -57,7 +58,15 @@ fn handle_incoming_discord_messages(
 
     for event in reader.iter() {
         let (author, author_cleaned) =
-            CleanString::new(event.get_author_display_name().to_string());
+            CleanString::new(if let Some(reply) = &event.referenced_message {
+                format!(
+                    "{author} ≫ {replying_to}",
+                    author = event.get_author_display_name(),
+                    replying_to = reply.get_author_display_name()
+                )
+            } else {
+                event.get_author_display_name().to_string()
+            });
         let (message, message_cleaned) = CleanString::new(event.content_clean(&cache).to_string());
 
         if author.is_empty() || message.is_empty() {

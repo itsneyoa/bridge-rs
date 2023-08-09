@@ -3,7 +3,8 @@ use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_replace_all;
 use std::ops::Deref;
 use twilight_model::{
-    channel::message::Mention, gateway::payload::incoming::MessageCreate as RawMessageCreate,
+    channel::{message::Mention, Message},
+    gateway::payload::incoming::MessageCreate as RawMessageCreate,
 };
 
 #[derive(Event, Debug)]
@@ -17,8 +18,21 @@ impl Deref for MessageCreate {
     }
 }
 
-impl MessageCreate {
-    pub fn get_author_display_name(&self) -> &str {
+pub trait MessageExt {
+    /// Returns the display name of the author of the message
+    fn get_author_display_name(&self) -> &str;
+    /// Returns the display name of the mention
+    fn get_mention_display_name(mention: &Mention) -> &str;
+    /// Returns the content of the message with user mentions replaced with their display names,
+    /// channel mentions replaced with their names, and role mentions replaced with their names
+    fn content_clean(&self, cache: &Cache) -> String;
+    /// Reacts to the message with the given reaction
+    #[must_use = "Reaction must be sent using an EventWriter"]
+    fn react(&self, reaction: Reaction) -> super::send::CreateReaction;
+}
+
+impl MessageExt for Message {
+    fn get_author_display_name(&self) -> &str {
         if let Some(member) = &self.member {
             if let Some(nick) = &member.nick {
                 return nick;
@@ -38,7 +52,7 @@ impl MessageCreate {
         &mention.name
     }
 
-    pub fn content_clean(&self, cache: &Cache) -> String {
+    fn content_clean(&self, cache: &Cache) -> String {
         let mut result = self.content.clone();
 
         for mention in &self.mentions {
@@ -82,8 +96,7 @@ impl MessageCreate {
         result
     }
 
-    #[must_use = "Reaction must be sent using an EventWriter"]
-    pub fn react(&self, reaction: Reaction) -> super::send::CreateReaction {
+    fn react(&self, reaction: Reaction) -> super::send::CreateReaction {
         super::send::CreateReaction {
             channel_id: self.channel_id.get(),
             message_id: self.id.get(),

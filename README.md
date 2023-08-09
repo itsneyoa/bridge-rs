@@ -19,7 +19,7 @@ _To do_
 -   [x] Sanitise and trim discord messages (max length 256, no illegal characters)
 -   [x] Online/Offline messages
 -   [x] Connected/Disconnected messages
--   [ ] Minecraft support for discord message replies
+-   [x] Minecraft support for discord message replies
 -   [ ] Discord slash commands
 -   [ ] Custom console logger
 -   [ ] Optional discord logger
