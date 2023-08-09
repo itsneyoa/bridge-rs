@@ -1,3 +1,4 @@
+mod bridge;
 mod config;
 mod discord;
 mod errors;
@@ -5,16 +6,10 @@ mod minecraft;
 mod plugin;
 mod sanitizer;
 
-use azalea::{
-    app::PluginGroup,
-    prelude::*,
-    swarm::{Swarm, SwarmBuilder, SwarmEvent},
-    DefaultBotPlugins, DefaultPlugins,
-};
 pub use config::config;
-pub use errors::Error;
-use plugin::BridgePlugin;
-use std::panic;
+use discord::status;
+pub use errors::*;
+use tokio::sync::oneshot;
 
 #[tokio::main]
 async fn main() -> errors::Result<()> {
@@ -22,16 +17,29 @@ async fn main() -> errors::Result<()> {
     dotenvy::dotenv().ok();
     config::init()?;
 
-    {
-        // Quit the app on any panics, usually bevy just prints them and continues
+    // Graciously quit on any panics, usually bevy just prints them and continues
+    let panic = {
+        use parking_lot::Mutex;
+        use std::{panic, sync::Arc};
 
-        let panic_hook = panic::take_hook();
+        let (tx, rx) = oneshot::channel();
+        let tx = Arc::new(Mutex::new(Some(tx)));
+        let hook = panic::take_hook();
+
         panic::set_hook(Box::new(move |panic_info| {
-            panic_hook(panic_info);
-            std::process::exit(1);
-        }));
-    }
+            // Call the original panic handler
+            hook(panic_info);
 
+            if let Some(tx) = tx.lock().take() {
+                tx.send(panic_info.to_string())
+                    .expect("Failed to send panic info");
+            }
+        }));
+
+        rx
+    };
+
+    #[cfg(debug_assertions)]
     {
         use parking_lot::deadlock::check_deadlock;
         use std::thread;
@@ -56,56 +64,24 @@ async fn main() -> errors::Result<()> {
         });
     }
 
-    let account = if let Some(email) = &config().email {
-        Account::microsoft(email)
-            .await
-            .expect("Failed to login with Microsoft")
-    } else {
-        Account::offline("Bridge")
-    };
+    let reason = tokio::try_join!(
+        // Run the bridge
+        bridge::run(),
+        // Listen for the ctrl-c signal, exiting when it is received
+        async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for ctrl-c");
 
-    SwarmBuilder::new_without_plugins()
-        .add_plugins(DefaultPlugins.build().disable::<bevy_log::LogPlugin>())
-        .add_plugins(DefaultBotPlugins)
-        .add_plugins(BridgePlugin)
-        .set_swarm_handler(handle_swarm)
-        .set_handler(handle)
-        .set_swarm_state(SwarmState)
-        .add_account(account)
-        .start(
-            format!(
-                "{server}:{port}",
-                server = config().server_address,
-                port = config().server_port
-            )
-            .as_str(),
-        )
-        .await?;
+            Err(Error::Terminated) as errors::Result<()>
+        },
+        async {
+            Err(Error::Panic(panic.await.expect("Panic handler dropped"))) as errors::Result<()>
+        }
+    )
+    .expect_err("Bridge can only exit with an error");
 
-    Ok(())
-}
+    status::send(status::Offline(&reason)).await;
 
-/// State local to the individual bot.
-#[derive(Default, Clone, Component)]
-pub struct State;
-
-/// State common to all bots which have existed and will exist.
-#[derive(Default, Clone, Resource)]
-pub struct SwarmState;
-
-async fn handle(_bot: Client, _event: Event, _state: State) -> anyhow::Result<()> {
-    Ok(())
-}
-
-async fn handle_swarm(
-    mut swarm: Swarm,
-    event: SwarmEvent,
-    _state: SwarmState,
-) -> anyhow::Result<()> {
-    if let SwarmEvent::Disconnect(account) = event {
-        println!("bot got kicked! {}", account.username);
-        swarm.add_with_exponential_backoff(&account, State).await;
-    }
-
-    Ok(())
+    Err(reason)
 }

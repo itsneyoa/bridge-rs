@@ -1,8 +1,15 @@
 mod handler;
 mod reactions;
+pub mod status;
 
 pub mod bridge {
     pub use super::handler::{recv, send};
+}
+
+mod colours {
+    pub const GREEN: u32 = 0x47f04a;
+    pub const YELLOW: u32 = 0xff8c00;
+    pub const RED: u32 = 0xf04a47;
 }
 
 use crate::{config, sanitizer::CleanString};
@@ -11,7 +18,11 @@ use azalea::{
     ecs::prelude::*,
 };
 use handler::{recv, send, DiscordHandler};
+use once_cell::sync::Lazy;
 use twilight_gateway::Intents;
+use twilight_http::Client as HttpClient;
+
+pub static HTTP: Lazy<HttpClient> = Lazy::new(|| HttpClient::new(config().discord_token.clone()));
 
 pub struct BridgeDiscordPlugin(&'static str);
 

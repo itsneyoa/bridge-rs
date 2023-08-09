@@ -8,9 +8,13 @@ pub enum Error {
     #[error(transparent)]
     Join(#[from] azalea::swarm::SwarmStartError),
 
-    // Discord
-    #[error("Unknown Event: {0:?}")]
-    UnknownGatewayEvent(twilight_gateway::Event),
+    // Ctrl + C was pressed
+    #[error("Process terminated by user")]
+    Terminated,
+
+    // Panic
+    #[error("{0:?}")]
+    Panic(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

@@ -17,8 +17,9 @@ _To do_
 -   [x] Route messages to the right chat (guild or officer)
 -   [x] Webhooks for discord incoming messages
 -   [x] Sanitise and trim discord messages (max length 256, no illegal characters)
--   [ ] Online/Offline messages
--   [ ] Connected/Disconnected messages
+-   [x] Online/Offline messages
+-   [x] Connected/Disconnected messages
+-   [ ] Minecraft support for discord message replies
 -   [ ] Discord slash commands
 -   [ ] Custom console logger
 -   [ ] Optional discord logger

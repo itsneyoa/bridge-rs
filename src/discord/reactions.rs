@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub struct Reaction {
     emoji: &'static str,
     description: &'static str,

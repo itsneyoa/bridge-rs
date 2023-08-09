@@ -14,7 +14,7 @@ use futures_lite::future::{block_on, poll_once};
 use std::{num::NonZeroU64, ops::Deref, sync::Arc};
 use tokio::sync::mpsc;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::{error::ReceiveMessageError, Event, Intents, Shard, ShardId};
+use twilight_gateway::{error::ReceiveMessageError, Config, Event, Intents, Shard, ShardId};
 use twilight_http::{
     request::channel::reaction::RequestReactionType, response::marker::EmptyBody,
     Client as HttpClient, Response,
@@ -23,6 +23,10 @@ use twilight_model::{
     channel::{
         message::{AllowedMentions, MentionType},
         Message,
+    },
+    gateway::{
+        payload::outgoing::update_presence::UpdatePresencePayload,
+        presence::{MinimalActivity, Status},
     },
     id::Id,
 };
@@ -39,13 +43,13 @@ impl Plugin for DiscordHandler {
         app.add_event::<recv::MessageCreate>()
             .add_systems(Update, handle_incoming_events);
 
-        app.add_event::<send::CreateMessage>()
-            .add_systems(Update, handle_create_message)
-            .add_systems(Update, handle_create_message_response);
+        app.add_event::<send::CreateMessage>().add_systems(
+            Update,
+            (handle_create_message, handle_create_message_response),
+        );
 
         app.add_event::<send::CreateReaction>()
-            .add_systems(Update, handle_create_reaction)
-            .add_systems(Update, handle_empty_body_response);
+            .add_systems(Update, (handle_create_reaction, handle_empty_body_response));
 
         app.add_event::<send::ChatMessage>()
             .add_systems(Update, handle_create_chat_message);
@@ -57,7 +61,7 @@ impl Plugin for DiscordHandler {
 
 #[derive(Resource)]
 struct Internals {
-    http: Arc<HttpClient>,
+    http: &'static HttpClient,
     rx: mpsc::UnboundedReceiver<Result<Event, ReceiveMessageError>>,
     tx: Option<mpsc::UnboundedSender<Result<Event, ReceiveMessageError>>>,
     shard: Option<Shard>,
@@ -67,13 +71,30 @@ struct Internals {
 
 impl Internals {
     pub fn new(token: String, intents: Intents) -> Self {
-        let shard = Shard::new(ShardId::ONE, token.clone(), intents);
-        let http = HttpClient::new(token);
+        let shard_config = Config::builder(token.clone(), intents)
+            .presence(
+                UpdatePresencePayload::new(
+                    vec![MinimalActivity {
+                        kind: twilight_model::gateway::presence::ActivityType::Watching,
+                        name: "Guild Chat".to_string(),
+                        // TODO: This could be replaced with the gh page
+                        url: None,
+                    }
+                    .into()],
+                    false,
+                    None,
+                    Status::Online,
+                )
+                .expect("Presence payload contained no activities"),
+            )
+            .build();
+        let shard = Shard::with_config(ShardId::ONE, shard_config);
+
         let (tx, rx) = mpsc::unbounded_channel();
         let webhook_cache = WebhookCache::default();
 
         Internals {
-            http: Arc::new(http),
+            http: &super::HTTP,
             rx,
             tx: Some(tx),
             shard: Some(shard),
@@ -161,7 +182,7 @@ fn handle_incoming_events(
         cache.update(&event);
         if let Err(e) = block_on(Compat::new(discord.webhook_cache.update(
             &event,
-            &discord.http,
+            discord.http,
             // The `permissions` argument should rarely be used, as it's only needed when a `WebhookUpdate` event is recieved
             PermissionsSource::Request,
         ))) {
@@ -171,7 +192,6 @@ fn handle_incoming_events(
         match event {
             Event::Ready(ready) => {
                 log::info!("{} is connected!", ready.user.name);
-                // TODO: Online embed
             }
             Event::MessageCreate(message) => {
                 if message.author.bot {
@@ -204,17 +224,13 @@ fn handle_create_message(
     let task_pool = IoTaskPool::get();
 
     for event in events.iter() {
-        let content = event.content.clone();
         let channel_id = event.channel_id;
+        let embed = event.embed.clone();
 
-        let http = discord.http.clone();
+        let http = discord.http;
 
         let task = task_pool.spawn(Compat::new(async move {
-            match http
-                .create_message(NonZeroU64::try_from(channel_id).unwrap().into())
-                .allowed_mentions(Some(&AllowedMentions::default()))
-                .content(&content)
-            {
+            match http.create_message(Id::new(channel_id)).embeds(&[embed]) {
                 Ok(created_message) => Ok(created_message.await),
                 Err(e) => Err(e),
             }
@@ -249,7 +265,7 @@ fn handle_create_reaction(
         let message_id = event.message_id;
         let emoji = event.emoji;
 
-        let http = discord.http.clone();
+        let http = discord.http;
 
         let task = task_pool.spawn(Compat::new(async move {
             Ok(http
@@ -286,7 +302,7 @@ fn handle_create_chat_message(
     let task_pool = IoTaskPool::get();
 
     for message in reader.iter() {
-        let http = discord.http.clone();
+        let http = discord.http;
         let webhook_cache = discord.webhook_cache.clone();
 
         let content = message.content.clone();
@@ -295,7 +311,7 @@ fn handle_create_chat_message(
 
         let task = task_pool.spawn(Compat::new(async move {
             let webhook = webhook_cache
-                .get_infallible(&http, Id::new(chat.into()), "Bridge")
+                .get_infallible(http, Id::new(chat.into()), "Bridge")
                 .await
                 .expect("Failed to get webhook");
 

@@ -1,11 +1,12 @@
-use azalea::{ecs::prelude::*, prelude::*};
-
 use crate::plugin::Chat;
+use azalea::{ecs::prelude::*, prelude::*};
+use twilight_model::channel::message::Embed;
 
 #[derive(Event, Debug)]
 pub struct CreateMessage {
     pub channel_id: u64,
-    pub content: String,
+    // The only messages from the bot account (not from a webhook) are embeds
+    pub embed: Embed,
 }
 
 #[derive(Event, Debug)]

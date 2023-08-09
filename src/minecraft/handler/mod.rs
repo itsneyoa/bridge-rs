@@ -16,8 +16,7 @@ impl Plugin for MinecraftHandler {
     fn build(&self, app: &mut azalea::app::App) {
         app.add_event::<recv::IncomingEvent>()
             .add_event::<send::ChatCommand>()
-            .add_systems(Update, handle_incoming_chats)
-            .add_systems(Update, handle_outgoing_chats);
+            .add_systems(Update, (handle_incoming_chats, handle_outgoing_chats));
     }
 }
 
