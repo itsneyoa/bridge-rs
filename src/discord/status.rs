@@ -38,7 +38,7 @@ pub async fn send(status: Status<'_>) {
             (
                 base.clone(),
                 base.description(format!(
-                    "Cause: `{cause}`",
+                    "```{cause}```",
                     cause = match error {
                         Error::Config(_err) =>
                             unreachable!("Config errors are handled at the start of execution"),
