@@ -4,27 +4,37 @@ pub mod bridge {
     pub use super::handler::{recv, send};
 }
 
-use crate::plugin::Chat;
+use crate::bridge::{Chat, DiscordPayload, MinecraftPayload};
 use azalea::{
     app::{Plugin, Update},
     ecs::prelude::*,
 };
+use parking_lot::Mutex;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
-pub struct MinecraftBridgePlugin;
+type Sender = mpsc::UnboundedSender<DiscordPayload>;
+type Receiver = Arc<Mutex<mpsc::UnboundedReceiver<MinecraftPayload>>>;
+
+pub struct MinecraftBridgePlugin {
+    pub sender: Sender,
+    pub receiver: Receiver,
+}
 
 impl Plugin for MinecraftBridgePlugin {
     fn build(&self, app: &mut azalea::app::App) {
-        app.add_plugins(handler::MinecraftHandler)
-            .add_systems(Update, handle_incoming_chats);
+        app.add_plugins(handler::MinecraftHandler {
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        })
+        .add_systems(Update, handle_incoming_chats);
     }
 }
 
 fn handle_incoming_chats(
     mut reader: EventReader<handler::recv::IncomingEvent>,
-    mut writer: EventWriter<crate::discord::bridge::send::ChatMessage>,
+    mut writer: EventWriter<crate::bridge::DiscordPayload>,
 ) {
-    use crate::discord::bridge::send::ChatMessage;
-
     for event in reader.iter() {
         let (author, content, chat) = match event {
             handler::recv::IncomingEvent::GuildMessage { author, content } => {
@@ -37,9 +47,9 @@ fn handle_incoming_chats(
             _ => return,
         };
 
-        writer.send(ChatMessage {
-            author: author.to_string(),
-            content: content.to_string(),
+        writer.send(DiscordPayload::ChatMessage {
+            author: author.to_owned(),
+            content: content.to_owned(),
             chat,
         })
     }

@@ -1,10 +1,21 @@
-use crate::{config, discord::status, errors, plugin::BridgePlugin};
+use crate::{
+    config,
+    discord::{status, Discord},
+    errors,
+    minecraft::MinecraftBridgePlugin,
+    sanitizer::CleanString,
+};
 use azalea::{
     app::PluginGroup,
+    ecs::event::Event as EventTrait,
     prelude::*,
     swarm::{prelude::*, DefaultSwarmPlugins},
     ClientInformation, DefaultBotPlugins, DefaultPlugins,
 };
+use parking_lot::Mutex;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use twilight_gateway::Intents;
 
 pub async fn run() -> errors::Result<()> {
     let account = if let Some(email) = &config().email {
@@ -15,6 +26,19 @@ pub async fn run() -> errors::Result<()> {
         Account::offline("Bridge")
     };
 
+    let (to_discord, from_minecraft) = mpsc::unbounded_channel::<DiscordPayload>();
+    let (to_minecraft, from_discord) = mpsc::unbounded_channel::<MinecraftPayload>();
+
+    let discord = Discord::new(
+        &config().discord_token,
+        Intents::GUILDS
+            | Intents::GUILD_MESSAGES
+            | Intents::MESSAGE_CONTENT
+            | Intents::GUILD_WEBHOOKS,
+        to_minecraft,
+    );
+    discord.start(from_minecraft);
+
     status::send(status::Online).await;
 
     SwarmBuilder::new_without_plugins()
@@ -22,7 +46,10 @@ pub async fn run() -> errors::Result<()> {
             DefaultPlugins.build().disable::<bevy_log::LogPlugin>(),
             DefaultBotPlugins,
             DefaultSwarmPlugins,
-            BridgePlugin,
+            MinecraftBridgePlugin {
+                sender: to_discord,
+                receiver: Arc::new(Mutex::new(from_discord)),
+            },
         ))
         .set_swarm_handler(handle_swarm)
         .set_swarm_state(SwarmState)
@@ -91,4 +118,35 @@ async fn handle_swarm(
     };
 
     Ok(())
+}
+
+/// A Payload sent to Minecraft
+#[derive(EventTrait, Debug, Clone)]
+pub enum MinecraftPayload {
+    Chat(CleanString),
+}
+
+/// A Payload sent to Discord
+#[derive(EventTrait, Debug, Clone)]
+pub enum DiscordPayload {
+    ChatMessage {
+        author: String,
+        content: String,
+        chat: Chat,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Chat {
+    Guild,
+    Officer,
+}
+
+impl From<Chat> for u64 {
+    fn from(value: Chat) -> Self {
+        match value {
+            Chat::Guild => config().channels.guild,
+            Chat::Officer => config().channels.officer,
+        }
+    }
 }

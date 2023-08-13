@@ -1,3 +1,4 @@
+mod mpsc_adapter;
 pub mod recv;
 pub mod send;
 
@@ -10,13 +11,28 @@ use azalea::{
 };
 use bevy_tasks::Task;
 
-pub struct MinecraftHandler;
+pub struct MinecraftHandler {
+    pub sender: super::Sender,
+    pub receiver: super::Receiver,
+}
 
 impl Plugin for MinecraftHandler {
     fn build(&self, app: &mut azalea::app::App) {
         app.add_event::<recv::IncomingEvent>()
             .add_event::<send::ChatCommand>()
-            .add_systems(Update, (handle_incoming_chats, handle_outgoing_chats));
+            .add_systems(
+                Update,
+                (
+                    handle_incoming_chats,
+                    transform_minecraft_payloads,
+                    handle_outgoing_chats,
+                ),
+            );
+
+        app.add_plugins(mpsc_adapter::MpscAdapterPlugin::new(
+            self.sender.clone(),
+            self.receiver.clone(),
+        ));
     }
 }
 
@@ -32,6 +48,22 @@ fn handle_incoming_chats(
 
         if let Ok(event) = recv::IncomingEvent::try_from(event.packet.content().as_str()) {
             writer.send(event)
+        }
+    }
+}
+
+fn transform_minecraft_payloads(
+    mut commands: Commands,
+    mut reader: EventReader<crate::bridge::MinecraftPayload>,
+) {
+    use crate::bridge::MinecraftPayload;
+
+    for event in reader.iter() {
+        match event {
+            MinecraftPayload::Chat(command) => {
+                let command = command.clone();
+                commands.add(|w: &mut World| w.send_event(send::ChatCommand(command)))
+            }
         }
     }
 }
@@ -53,7 +85,7 @@ fn handle_outgoing_chats(
 
         writer.send(SendChatEvent {
             entity,
-            content: event.0.clone(),
+            content: (*event.0).clone(),
         })
     }
 }

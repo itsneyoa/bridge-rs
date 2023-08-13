@@ -3,7 +3,6 @@ mod config;
 mod discord;
 mod errors;
 mod minecraft;
-mod plugin;
 mod sanitizer;
 
 pub use config::config;

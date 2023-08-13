@@ -1,7 +1,7 @@
 use lazy_regex::regex_replace_all;
 use std::ops::{Add, Deref, DerefMut};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CleanString(String);
 
 impl CleanString {

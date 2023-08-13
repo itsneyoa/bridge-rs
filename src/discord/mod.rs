@@ -2,95 +2,112 @@ mod handler;
 mod reactions;
 pub mod status;
 
-pub mod bridge {
-    pub use super::handler::{recv, send};
-}
-
 mod colours {
     pub const GREEN: u32 = 0x47f04a;
     pub const YELLOW: u32 = 0xff8c00;
     pub const RED: u32 = 0xf04a47;
 }
 
-use crate::{config, sanitizer::CleanString};
-use azalea::{
-    app::{Plugin, Update},
-    ecs::prelude::*,
+use crate::{
+    bridge::{DiscordPayload, MinecraftPayload},
+    config,
 };
-use handler::{recv, send, DiscordHandler};
 use once_cell::sync::Lazy;
-use recv::MessageExt;
-use twilight_gateway::Intents;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use twilight_cache_inmemory::{InMemoryCache, ResourceType};
+use twilight_gateway::{Config as ShardConfig, Intents, Shard, ShardId};
 use twilight_http::Client as HttpClient;
+use twilight_model::gateway::{
+    payload::outgoing::update_presence::UpdatePresencePayload,
+    presence::{MinimalActivity, Status},
+};
+use twilight_webhook::cache::WebhooksCache;
 
 pub static HTTP: Lazy<HttpClient> = Lazy::new(|| HttpClient::new(config().discord_token.clone()));
 
-pub struct BridgeDiscordPlugin(&'static str);
-
-impl BridgeDiscordPlugin {
-    pub fn new(token: &'static str) -> Self {
-        Self(token)
-    }
+pub struct Discord {
+    sender: mpsc::UnboundedSender<MinecraftPayload>,
+    shard: Option<Shard>,
+    cache: InMemoryCache,
+    webhook_cache: WebhooksCache,
 }
 
-impl Plugin for BridgeDiscordPlugin {
-    fn build(&self, app: &mut azalea::app::App) {
-        let intents = Intents::GUILDS
-            | Intents::GUILD_MESSAGES
-            | Intents::MESSAGE_CONTENT
-            | Intents::GUILD_WEBHOOKS;
-
-        app.add_plugins(DiscordHandler {
-            token: self.0.to_string(),
-            intents,
-        })
-        .add_systems(Update, handle_incoming_discord_messages);
-    }
-}
-
-fn handle_incoming_discord_messages(
-    mut reader: EventReader<recv::MessageCreate>,
-    mut chat_writer: EventWriter<crate::minecraft::bridge::send::ChatCommand>,
-    mut reaction_writer: EventWriter<send::CreateReaction>,
-    cache: Res<handler::Cache>,
-) {
-    use crate::minecraft::bridge::send::ChatCommand as MinecraftChatCommand;
-
-    for event in reader.iter() {
-        let (author, author_cleaned) =
-            CleanString::new(if let Some(reply) = &event.referenced_message {
-                format!(
-                    "{author} ≫ {replying_to}",
-                    author = event.get_author_display_name(),
-                    replying_to = reply.get_author_display_name()
+impl Discord {
+    pub fn new(
+        token: &str,
+        intents: Intents,
+        sender: mpsc::UnboundedSender<MinecraftPayload>,
+    ) -> Self {
+        let shard_config = ShardConfig::builder(token.to_string(), intents)
+            .presence(
+                UpdatePresencePayload::new(
+                    vec![MinimalActivity {
+                        kind: twilight_model::gateway::presence::ActivityType::Watching,
+                        name: "Guild Chat".to_string(),
+                        // TODO: This could be replaced with the gh page
+                        url: None,
+                    }
+                    .into()],
+                    false,
+                    None,
+                    Status::Online,
                 )
-            } else {
-                event.get_author_display_name().to_string()
+                .expect("Presence payload contained no activities"),
+            )
+            .build();
+        let shard = Shard::with_config(ShardId::ONE, shard_config);
+
+        Self {
+            sender,
+            shard: Some(shard),
+            cache: InMemoryCache::builder()
+                .resource_types(
+                    ResourceType::ROLE | ResourceType::CHANNEL | ResourceType::USER_CURRENT,
+                )
+                .build(),
+            webhook_cache: WebhooksCache::new(),
+        }
+    }
+
+    pub fn start(mut self, mut receiver: mpsc::UnboundedReceiver<DiscordPayload>) {
+        let mut shard = self.shard.take().expect("Shard was already taken");
+        let discord = Arc::new(self);
+
+        // Handle events incoming from the Discord Gateway
+        {
+            let discord = discord.clone();
+            tokio::spawn(async move {
+                let handler = Arc::new(handler::Discord::new(discord));
+
+                loop {
+                    let event = shard.next_event().await;
+
+                    match event {
+                        Ok(event) => {
+                            let handler = handler.clone();
+                            tokio::spawn(async move {
+                                handler.handle_discord_event(event).await;
+                            });
+                        }
+                        Err(error) => {
+                            log::error!("Shard error: {:?}", error);
+                        }
+                    }
+                }
             });
-        let (message, message_cleaned) = CleanString::new(event.content_clean(&cache).to_string());
-
-        if author.is_empty() || message.is_empty() {
-            reaction_writer.send(event.react(reactions::EMPTY_FIELD));
-            continue;
         }
 
-        let prefix = match event.channel_id.get() {
-            id if id == config().channels.guild => "gc",
-            id if id == config().channels.officer => "oc",
-            _ => return,
-        };
+        // Handle events incoming from Minecraft
+        tokio::spawn(async move {
+            let handler = Arc::new(handler::Minecraft::new(discord));
+            while let Some(event) = receiver.recv().await {
+                let handler = handler.clone();
 
-        let mut command = format!("/{prefix} ").as_str() + author + ": " + message;
+                tokio::spawn(async move { handler.handle_event(event).await });
+            }
 
-        if author_cleaned || message_cleaned {
-            reaction_writer.send(event.react(reactions::ILLEGAL_CHARACTERS));
-        }
-
-        if command.len() > 256 {
-            reaction_writer.send(event.react(reactions::TOO_LONG));
-            command.truncate(256);
-        }
-
-        chat_writer.send(MinecraftChatCommand(command))
+            log::error!("Minecraft -> Discord receive channel closed");
+        });
     }
 }
