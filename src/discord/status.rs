@@ -43,6 +43,7 @@ pub async fn send(status: Status<'_>) {
                         Error::Config(_err) =>
                             unreachable!("Config errors are handled at the start of execution"),
                         Error::Join(err) => err.to_string(),
+                        Error::Discord(err) => err.to_string(),
                         Error::Terminated => "Process terminated by user".to_string(),
                         Error::Panic(info) => info.to_string(),
                     },

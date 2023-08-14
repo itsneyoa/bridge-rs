@@ -37,6 +37,9 @@ pub async fn run() -> errors::Result<()> {
             | Intents::GUILD_WEBHOOKS,
         to_minecraft,
     );
+
+    discord.register_commands().await?;
+
     discord.start(from_minecraft);
 
     status::send(status::Online).await;

@@ -1,3 +1,4 @@
+mod commands;
 mod handler;
 mod reactions;
 pub mod status;
@@ -10,7 +11,7 @@ mod colours {
 
 use crate::{
     bridge::{DiscordPayload, MinecraftPayload},
-    config,
+    config, Result,
 };
 use once_cell::sync::Lazy;
 use std::sync::Arc;
@@ -68,6 +69,10 @@ impl Discord {
                 .build(),
             webhook_cache: WebhooksCache::new(),
         }
+    }
+
+    pub async fn register_commands(&self) -> Result<()> {
+        commands::register_commands().await
     }
 
     pub fn start(mut self, mut receiver: mpsc::UnboundedReceiver<DiscordPayload>) {

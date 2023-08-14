@@ -8,6 +8,10 @@ pub enum Error {
     #[error(transparent)]
     Join(#[from] azalea::swarm::SwarmStartError),
 
+    // Discord
+    #[error(transparent)]
+    Discord(#[from] twilight_http::Error),
+
     // Ctrl + C was pressed
     #[error("Process terminated by user")]
     Terminated,
