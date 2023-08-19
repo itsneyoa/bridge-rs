@@ -4,12 +4,8 @@ pub mod send;
 
 use azalea::{
     app::{Plugin, Update},
-    chat::{ChatReceivedEvent, SendChatEvent},
     ecs::prelude::*,
-    entity::Local,
-    prelude::*,
 };
-use bevy_tasks::Task;
 
 pub struct MinecraftHandler {
     pub sender: super::Sender,
@@ -18,14 +14,17 @@ pub struct MinecraftHandler {
 
 impl Plugin for MinecraftHandler {
     fn build(&self, app: &mut azalea::app::App) {
-        app.add_event::<recv::IncomingEvent>()
+        app.add_event::<recv::Message>()
+            .add_event::<recv::Moderation>()
+            .add_event::<recv::Toggle>()
+            .add_event::<recv::Update>()
             .add_event::<send::ChatCommand>()
             .add_systems(
                 Update,
                 (
-                    handle_incoming_chats,
+                    recv::handle_incoming_chats,
+                    send::handle_outgoing_chats,
                     transform_minecraft_payloads,
-                    handle_outgoing_chats,
                 ),
             );
 
@@ -33,22 +32,6 @@ impl Plugin for MinecraftHandler {
             self.sender.clone(),
             self.receiver.clone(),
         ));
-    }
-}
-
-#[derive(Component)]
-pub struct MinecraftResponseTask<T>(Task<Result<T, anyhow::Error>>);
-
-fn handle_incoming_chats(
-    mut reader: EventReader<ChatReceivedEvent>,
-    mut writer: EventWriter<recv::IncomingEvent>,
-) {
-    for event in reader.iter() {
-        log::info!("Minecraft Chat: {}", event.packet.content());
-
-        if let Ok(event) = recv::IncomingEvent::try_from(event.packet.content().as_str()) {
-            writer.send(event)
-        }
     }
 }
 
@@ -65,27 +48,5 @@ fn transform_minecraft_payloads(
                 commands.add(|w: &mut World| w.send_event(send::ChatCommand(command)))
             }
         }
-    }
-}
-
-fn handle_outgoing_chats(
-    mut reader: EventReader<send::ChatCommand>,
-    mut writer: EventWriter<SendChatEvent>,
-    entity: Query<Entity, With<Local>>,
-) {
-    for event in reader.iter() {
-        let Ok(entity) = entity.get_single() else {
-            println!("Not in world");
-            return;
-        };
-
-        log::debug!("Sending to Minecraft: {}", event.0);
-
-        // TODO: Add cooldown
-
-        writer.send(SendChatEvent {
-            entity,
-            content: (*event.0).clone(),
-        })
     }
 }

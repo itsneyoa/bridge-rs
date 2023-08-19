@@ -53,7 +53,6 @@ mod prelude {
     }
 
     pub use super::RunCommand;
-    pub use twilight_http::Client;
     pub use twilight_interactions::command::{CommandModel, CreateCommand};
     pub use twilight_model::{
         application::interaction::Interaction, guild::Permissions,

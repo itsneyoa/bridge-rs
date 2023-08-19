@@ -137,9 +137,15 @@ pub enum DiscordPayload {
         content: String,
         chat: Chat,
     },
+    Toggle {
+        member: String,
+        online: bool,
+    },
+    MemberUpdate(crate::minecraft::guild_events::Update),
+    Moderation(crate::minecraft::guild_events::Moderation),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Chat {
     Guild,
     Officer,

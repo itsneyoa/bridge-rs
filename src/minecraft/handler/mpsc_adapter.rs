@@ -55,7 +55,8 @@ fn handle_recv<R: Event>(rx: Res<ResourceWrapper<Receiver<R>>>, mut writer: Even
             Err(err) => match err {
                 mpsc::error::TryRecvError::Empty => return,
                 mpsc::error::TryRecvError::Disconnected => {
-                    panic!("Mpsc Adapter recv channel closed")
+                    log::warn!("Mpsc Adapter recv channel closed");
+                    return;
                 }
             },
         }
