@@ -3,6 +3,7 @@ use crate::{
     bridge::MinecraftPayload,
     config,
     discord::{
+        autocomplete,
         commands::{self, RunCommand},
         reactions, Discord, HTTP,
     },
@@ -12,7 +13,13 @@ use std::{ops::Deref, sync::Arc};
 use twilight_gateway::Event;
 use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::{
-    application::interaction::{application_command::CommandData, InteractionData},
+    application::{
+        command::{CommandOptionChoice, CommandOptionChoiceValue, CommandOptionType},
+        interaction::{
+            application_command::{CommandData, CommandOptionValue},
+            InteractionData, InteractionType,
+        },
+    },
     gateway::payload::incoming::{InteractionCreate, MessageCreate},
     http::interaction::{InteractionResponse, InteractionResponseType},
 };
@@ -119,16 +126,37 @@ impl DiscordHandler {
     }
 
     async fn handle_interaction_create(&self, mut interaction: InteractionCreate) {
-        match interaction.data.take() {
-            Some(InteractionData::ApplicationCommand(data)) => {
-                match self.handle_command_interaction(interaction, *data).await {
-                    Ok(_) => {}
-                    Err(err) => log::error!("Failed to handle command interaction {err}"),
+        match interaction.kind {
+            InteractionType::ApplicationCommand => {
+                let InteractionData::ApplicationCommand(data) = interaction
+                    .data
+                    .take()
+                    .expect("ApplicationCommand interaction had no data")
+                else {
+                    panic!("InteractionType::ApplicationCommand should have InteractionData::ApplicationCommand as data")
+                };
+
+                if let Err(err) = self.handle_command_interaction(interaction, *data).await {
+                    log::error!("Failed to handle command interaction: {err}")
                 }
             }
+            InteractionType::ApplicationCommandAutocomplete => {
+                let InteractionData::ApplicationCommand(data) = interaction
+                    .data
+                    .take()
+                    .expect("ApplicationCommandAutocomplete interaction had no data")
+                else {
+                    panic!("InteractionType::ApplicationCommandAutocomplete should have InteractionData::ApplicationCommand as data")
+                };
 
-            Some(_) => {}
-            None => {}
+                if let Err(err) = self
+                    .handle_autocomplete_interaction(interaction, *data)
+                    .await
+                {
+                    log::error!("Failed to handle autocomplete interaction: {err}")
+                }
+            }
+            _ => {}
         }
     }
 
@@ -194,5 +222,54 @@ impl DiscordHandler {
                     .map(|_| ())
             }
         }
+    }
+
+    async fn handle_autocomplete_interaction(
+        &self,
+        interaction: InteractionCreate,
+        data: CommandData,
+    ) -> anyhow::Result<()> {
+        let Some(focused) = data.options.iter().find_map(|option| {
+            if let CommandOptionValue::Focused(input, CommandOptionType::String) = &option.value {
+                Some(input)
+            } else if let CommandOptionValue::SubCommand(options) = &option.value {
+                options.iter().find_map(|option| {
+                    if let CommandOptionValue::Focused(input, CommandOptionType::String) =
+                        &option.value
+                    {
+                        Some(input)
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        }) else {
+            return Err(anyhow::anyhow!("Could not find focused field"));
+        };
+
+        let client = HTTP.interaction(interaction.application_id);
+        Ok(client
+            .create_response(
+                interaction.id,
+                &interaction.token,
+                &InteractionResponse {
+                    kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
+                    data: Some(
+                        InteractionResponseDataBuilder::new()
+                            .choices(autocomplete::get_matches(focused).into_iter().take(25).map(
+                                |member| CommandOptionChoice {
+                                    name: member.clone(),
+                                    value: CommandOptionChoiceValue::String(member),
+                                    name_localizations: None,
+                                },
+                            ))
+                            .build(),
+                    ),
+                },
+            )
+            .await
+            .map(|_| ())?)
     }
 }

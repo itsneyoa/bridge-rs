@@ -16,11 +16,8 @@ twilight-cache-inmemory = { version = "0.15.2" }
 twilight-gateway = "0.15.2"
 twilight-http = "0.15.2"
 twilight-model = "0.15.2"
-twilight-validate = "0.15.1"
 twilight-webhook = { path = "twilight-webhook" }
 dotenvy = "0.15.7"
-async-compat = "0.2.1"
-futures-lite = "1.13.0"
 log = "0.4.20"
 thiserror = "1.0.43"
 anyhow = "1.0.72"

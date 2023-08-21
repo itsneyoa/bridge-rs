@@ -1,3 +1,4 @@
+mod autocomplete;
 mod commands;
 mod handler;
 mod reactions;

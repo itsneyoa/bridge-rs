@@ -28,6 +28,8 @@ impl MinecraftHandler {
     }
 
     pub async fn handle_event(&self, event: DiscordPayload) {
+        self.add_event_to_autocomplete(&event);
+
         match event {
             DiscordPayload::ChatMessage {
                 author,
@@ -236,5 +238,41 @@ impl MinecraftHandler {
             .get_infallible(&HTTP, Id::new(chat.into()), "Bridge")
             .await
             .expect("Failed to get webhook")
+    }
+
+    fn add_event_to_autocomplete(&self, event: &DiscordPayload) {
+        use crate::discord::autocomplete;
+        use crate::minecraft::guild_events::{Moderation, Update};
+
+        match event {
+            DiscordPayload::ChatMessage { author, .. } => autocomplete::add_username(author),
+            DiscordPayload::Toggle { member, .. } => autocomplete::add_username(member),
+            DiscordPayload::MemberUpdate(update) => match update {
+                Update::Join(member) => autocomplete::add_username(member),
+                Update::Leave(member) => autocomplete::remove_username(member),
+                Update::Kick { member, by } => {
+                    autocomplete::add_username(member);
+                    autocomplete::add_username(by);
+                }
+                Update::Promotion { member, .. } => autocomplete::add_username(member),
+                Update::Demotion { member, .. } => autocomplete::add_username(member),
+            },
+            DiscordPayload::Moderation(moderation) => match moderation {
+                Moderation::Mute { member, by, .. } => {
+                    if let Some(member) = member {
+                        autocomplete::add_username(member);
+                    }
+
+                    autocomplete::add_username(by);
+                }
+                Moderation::Unmute { member, by } => {
+                    if let Some(member) = member {
+                        autocomplete::add_username(member);
+                    }
+
+                    autocomplete::add_username(by);
+                }
+            },
+        }
     }
 }

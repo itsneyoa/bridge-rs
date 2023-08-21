@@ -9,7 +9,7 @@ use super::prelude::*;
 )]
 pub struct MuteCommand {
     /// The player to mute
-    #[command(min_length = 1, max_length = 16)]
+    #[command(min_length = 1, max_length = 16, autocomplete = true)]
     player: String,
 
     /// The duration to mute the player for
