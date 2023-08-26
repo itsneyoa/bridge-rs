@@ -6,7 +6,7 @@ use lazy_regex::regex_captures;
 /// # Examples
 /// - `Guild > neyoa joined.`
 /// - `Guild > neyoa left.`
-#[derive(Event, Debug)]
+#[derive(Event, Debug, Clone)]
 pub struct Toggle {
     pub member: String,
     pub online: bool,

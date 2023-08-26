@@ -12,7 +12,7 @@ mod colours {
 
 use crate::{
     config,
-    payloads::{DiscordPayload, MinecraftPayload},
+    payloads::{command::CommandPayload, events::ChatEvent},
     Result,
 };
 pub use commands::TimeUnit;
@@ -31,8 +31,8 @@ use twilight_webhook::cache::WebhooksCache;
 pub static HTTP: Lazy<HttpClient> = Lazy::new(|| HttpClient::new(config().discord_token.clone()));
 
 pub struct Discord {
-    sender: mpsc::UnboundedSender<MinecraftPayload>,
-    receiver: async_broadcast::Receiver<DiscordPayload>,
+    sender: mpsc::UnboundedSender<CommandPayload>,
+    receiver: async_broadcast::Receiver<ChatEvent>,
     shard: Option<Shard>,
     cache: InMemoryCache,
     webhook_cache: WebhooksCache,
@@ -43,8 +43,8 @@ impl Discord {
         token: &str,
         intents: Intents,
         (sender, receiver): (
-            mpsc::UnboundedSender<MinecraftPayload>,
-            async_broadcast::Receiver<DiscordPayload>,
+            mpsc::UnboundedSender<CommandPayload>,
+            async_broadcast::Receiver<ChatEvent>,
         ),
     ) -> Self {
         let shard_config = ShardConfig::builder(token.to_string(), intents)

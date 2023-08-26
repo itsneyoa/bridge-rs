@@ -2,9 +2,13 @@ mod help;
 mod mute;
 
 use super::{colours, HTTP};
-use crate::minecraft::chat_events::Response;
-use crate::payloads::{DiscordPayload, MinecraftCommand, MinecraftPayload};
-use crate::Result;
+use crate::{
+    payloads::{
+        command::{CommandPayload, MinecraftCommand},
+        events::{ChatEvent, Response},
+    },
+    Result,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -69,8 +73,8 @@ impl From<TimeUnit> for char {
 }
 
 pub struct Feedback {
-    pub tx: mpsc::UnboundedSender<MinecraftPayload>,
-    pub rx: async_broadcast::Receiver<DiscordPayload>,
+    pub tx: mpsc::UnboundedSender<CommandPayload>,
+    pub rx: async_broadcast::Receiver<ChatEvent>,
 }
 
 impl Feedback {
@@ -80,12 +84,12 @@ impl Feedback {
         f: F,
     ) -> Result<String, FeedbackError>
     where
-        F: Fn(DiscordPayload) -> Option<Result<String, FeedbackError>>,
+        F: Fn(ChatEvent) -> Option<Result<String, FeedbackError>>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
         self.tx
-            .send(MinecraftPayload::new(command, verify_tx))
+            .send(CommandPayload::new(command, verify_tx))
             .expect("Minecraft payload receiver was dropped");
 
         verify_rx

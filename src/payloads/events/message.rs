@@ -7,7 +7,7 @@ use lazy_regex::regex_captures;
 /// # Examples
 /// - `Guild > neyoa: hi`
 /// - `Officer > neyoa: hi`
-#[derive(Event, Debug)]
+#[derive(Event, Debug, Clone)]
 pub struct Message {
     pub author: String,
     pub content: String,

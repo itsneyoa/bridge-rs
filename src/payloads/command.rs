@@ -12,12 +12,12 @@ pub type Notifier = Arc<Mutex<Option<oneshot::Sender<()>>>>;
 /// A Payload sent to Minecraft
 #[derive(Event, Debug, Clone)]
 #[non_exhaustive]
-pub struct MinecraftPayload {
+pub struct CommandPayload {
     pub command: MinecraftCommand,
     pub notify: Notifier,
 }
 
-impl MinecraftPayload {
+impl CommandPayload {
     pub fn new(command: MinecraftCommand, sender: oneshot::Sender<()>) -> Self {
         Self {
             command,

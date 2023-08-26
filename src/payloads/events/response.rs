@@ -36,7 +36,7 @@ impl TryFrom<&str> for Response {
             return Ok(Self::PlayerNotFound(username.to_string()));
         }
 
-        if value == r#"Unknown command. Type "/help" for help."# {
+        if value.starts_with(r#"Unknown command. Type "/help" for help."#) {
             return Ok(Self::UnknownCommand);
         }
 

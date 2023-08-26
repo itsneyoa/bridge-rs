@@ -4,10 +4,13 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{self, Feedback, RunCommand},
+        commands::{self, Feedback, FeedbackError, RunCommand},
         reactions, Discord, HTTP,
     },
-    payloads::{DiscordPayload, MinecraftCommand},
+    payloads::{
+        command::MinecraftCommand,
+        events::{ChatEvent, Message},
+    },
     sanitizer::CleanString,
 };
 use std::{ops::Deref, sync::Arc};
@@ -143,24 +146,29 @@ impl DiscordHandler {
             .lock()
             .await
             .execute(command, |payload| match payload {
-                DiscordPayload::ChatMessage {
+                ChatEvent::Message(Message {
                     author,
                     content: msg_content,
                     chat,
-                } if chat == dest_chat
+                }) if chat == dest_chat
                     && msg_content.starts_with(author.as_str())
                     && msg_content.ends_with(content.as_str()) =>
                 {
                     Some(Ok(String::new()))
                 }
-                DiscordPayload::CommandResponse(response) => {
+                ChatEvent::CommandResponse(response) => {
                     todo!("handle gc/oc command responses")
                 }
                 _ => None,
             })
             .await
         {
-            todo!("handle errors in chat messages")
+            match err {
+                FeedbackError::Response(_) => todo!(),
+                FeedbackError::Custom(_) => {
+                    unreachable!("Chat messages never return custom errors")
+                }
+            }
         }
     }
 

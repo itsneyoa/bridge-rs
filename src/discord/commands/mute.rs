@@ -1,7 +1,9 @@
 use super::{embed_from_result, Feedback, FeedbackError, RunCommand, TimeUnit};
 use crate::{
-    minecraft::chat_events::{Moderation, Response},
-    payloads::{DiscordPayload, MinecraftCommand},
+    payloads::{
+        command,
+        events::{ChatEvent, Moderation, Response},
+    },
     sanitizer::ValidIGN,
 };
 use async_trait::async_trait;
@@ -53,14 +55,14 @@ impl RunCommand for MuteCommand {
             ))));
         };
 
-        let command = MinecraftCommand::Mute(player, duration, self.unit);
+        let command = command::MinecraftCommand::Mute(player, duration, self.unit);
 
         embed_from_result(
             feedback
                 .lock()
                 .await
                 .execute(command, |payload| match payload {
-                    DiscordPayload::Moderation(Moderation::Mute {
+                    ChatEvent::Moderation(Moderation::Mute {
                         member,
                         length,
                         unit,
@@ -77,7 +79,7 @@ impl RunCommand for MuteCommand {
                         None
                     }
 
-                    DiscordPayload::CommandResponse(
+                    ChatEvent::CommandResponse(
                         ref response @ (Response::NotInGuild(ref user)
                         | Response::PlayerNotFound(ref user)),
                     ) => {

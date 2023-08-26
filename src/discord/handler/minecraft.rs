@@ -1,7 +1,7 @@
 use crate::{
     bridge::Chat,
     discord::{Discord, HTTP},
-    payloads::DiscordPayload,
+    payloads::events::{self, ChatEvent, Message, Toggle},
 };
 use std::{ops::Deref, sync::Arc};
 use twilight_model::{
@@ -28,15 +28,15 @@ impl MinecraftHandler {
         Self(discord)
     }
 
-    pub async fn handle_event(&self, event: DiscordPayload) {
+    pub async fn handle_event(&self, event: ChatEvent) {
         self.add_event_to_autocomplete(&event);
 
         match event {
-            DiscordPayload::ChatMessage {
+            ChatEvent::Message(Message {
                 author,
                 content,
                 chat,
-            } => {
+            }) => {
                 let webhook = self.get_webhook(chat).await;
 
                 if let Err(err) = HTTP
@@ -60,7 +60,7 @@ impl MinecraftHandler {
                 };
             }
 
-            DiscordPayload::Toggle { member, online } => {
+            ChatEvent::Toggle(events::Toggle { member, online }) => {
                 let webhook = self.get_webhook(Chat::Guild).await;
 
                 let embed = EmbedBuilder::new()
@@ -96,8 +96,8 @@ impl MinecraftHandler {
                 };
             }
 
-            DiscordPayload::GuildEvent(update) => {
-                use crate::minecraft::chat_events::GuildEvent::*;
+            ChatEvent::GuildEvent(update) => {
+                use crate::payloads::events::GuildEvent::*;
 
                 let embed = match update {
                     Join(member) => EmbedBuilder::new()
@@ -154,8 +154,8 @@ impl MinecraftHandler {
                 }
             }
 
-            DiscordPayload::Moderation(moderation) => {
-                use crate::minecraft::chat_events::Moderation::*;
+            ChatEvent::Moderation(moderation) => {
+                use crate::payloads::events::Moderation::*;
 
                 let member = match moderation {
                     Mute { ref member, .. } => member,
@@ -214,7 +214,7 @@ impl MinecraftHandler {
                 }
             }
 
-            DiscordPayload::CommandResponse(_response) => {}
+            ChatEvent::CommandResponse(_) | ChatEvent::Unknown(_) => {}
         }
     }
 
@@ -243,14 +243,14 @@ impl MinecraftHandler {
             .expect("Failed to get webhook")
     }
 
-    fn add_event_to_autocomplete(&self, event: &DiscordPayload) {
+    fn add_event_to_autocomplete(&self, event: &ChatEvent) {
         use crate::discord::autocomplete;
-        use crate::minecraft::chat_events::{GuildEvent, Moderation};
+        use crate::payloads::events::{GuildEvent, Moderation};
 
         match event {
-            DiscordPayload::ChatMessage { author, .. } => autocomplete::add_username(author),
-            DiscordPayload::Toggle { member, .. } => autocomplete::add_username(member),
-            DiscordPayload::GuildEvent(update) => match update {
+            ChatEvent::Message(Message { author, .. }) => autocomplete::add_username(author),
+            ChatEvent::Toggle(Toggle { member, .. }) => autocomplete::add_username(member),
+            ChatEvent::GuildEvent(update) => match update {
                 GuildEvent::Join(member) => autocomplete::add_username(member),
                 GuildEvent::Leave(member) => autocomplete::remove_username(member),
                 GuildEvent::Kick { member, by } => {
@@ -260,7 +260,7 @@ impl MinecraftHandler {
                 GuildEvent::Promotion { member, .. } => autocomplete::add_username(member),
                 GuildEvent::Demotion { member, .. } => autocomplete::add_username(member),
             },
-            DiscordPayload::Moderation(moderation) => match moderation {
+            ChatEvent::Moderation(moderation) => match moderation {
                 Moderation::Mute { member, by, .. } => {
                     if let Some(member) = member {
                         autocomplete::add_username(member);
@@ -276,7 +276,7 @@ impl MinecraftHandler {
                     autocomplete::add_username(by);
                 }
             },
-            DiscordPayload::CommandResponse(_) => {}
+            ChatEvent::CommandResponse(_) | ChatEvent::Unknown(_) => {}
         }
     }
 }
