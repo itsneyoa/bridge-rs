@@ -43,15 +43,15 @@ impl RunCommand for MuteCommand {
     async fn run(&self, _interaction: &Interaction, feedback: Arc<Mutex<Feedback>>) -> Embed {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return embed_from_result(Err(FeedbackError::Custom(format!(
-                "`{}` is not a valid IGN",
-                self.player
+                "`{ign}` is not a valid IGN",
+                ign = self.player
             ))));
         };
 
         let Ok(duration) = u8::try_from(self.duration) else {
             return embed_from_result(Err(FeedbackError::Custom(format!(
-                "`{}` is not a valid mute duration",
-                self.duration
+                "`{duration}` is not a valid mute duration",
+                duration = self.duration
             ))));
         };
 

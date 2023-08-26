@@ -1,21 +1,14 @@
-#![allow(unused)]
-
+#[derive(Debug)]
+#[non_exhaustive]
 pub struct Reaction {
-    emoji: &'static str,
-    description: &'static str,
+    pub emoji: &'static str,
+    pub description: &'static str,
 }
 
 impl Reaction {
+    #[allow(unused)]
     pub fn all() -> &'static [&'static Self] {
-        &[&ILLEGAL_CHARACTERS, &TOO_LONG, &EMPTY_FIELD]
-    }
-
-    pub fn emoji(&self) -> &'static str {
-        self.emoji
-    }
-
-    pub fn description(&self) -> &'static str {
-        self.description
+        &[&ILLEGAL_CHARACTERS, &TOO_LONG, &EMPTY_FIELD, &TIMED_OUT]
     }
 }
 
@@ -32,4 +25,9 @@ pub const TOO_LONG: Reaction = Reaction {
 pub const EMPTY_FIELD: Reaction = Reaction {
     emoji: "❌",
     description: "The message or your name had no content after cleaning",
+};
+
+pub const TIMED_OUT: Reaction = Reaction {
+    emoji: "⏱️",
+    description: "Searching for a command response timed out",
 };

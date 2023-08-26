@@ -4,7 +4,7 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{self, Feedback, FeedbackError, RunCommand},
+        commands::{self, Feedback, RunCommand},
         reactions, Discord, HTTP,
     },
     payloads::{
@@ -49,7 +49,7 @@ impl DiscordHandler {
         Self {
             feedback: Arc::new(Mutex::new(Feedback {
                 tx: discord.sender.clone(),
-                rx: discord.receiver.new_receiver(),
+                rx: discord.receiver.new_receiver().deactivate(),
             })),
             discord,
         }
@@ -141,35 +141,29 @@ impl DiscordHandler {
 
         let command = MinecraftCommand::ChatMessage(command);
 
-        if let Err(err) = self
+        if self
             .feedback
             .lock()
             .await
             .execute(command, |payload| match payload {
                 ChatEvent::Message(Message {
-                    author,
-                    content: msg_content,
+                    content: ref msg_content,
                     chat,
+                    ..
                 }) if chat == dest_chat
                     && msg_content.starts_with(author.as_str())
                     && msg_content.ends_with(content.as_str()) =>
                 {
                     Some(Ok(String::new()))
                 }
-                ChatEvent::CommandResponse(response) => {
-                    todo!("handle gc/oc command responses")
-                }
                 _ => None,
             })
             .await
+            .is_err()
         {
-            match err {
-                FeedbackError::Response(_) => todo!(),
-                FeedbackError::Custom(_) => {
-                    unreachable!("Chat messages never return custom errors")
-                }
-            }
-        }
+            // HACK: Currently, if an error is returned then we timed out
+            message.react(reactions::TIMED_OUT);
+        };
     }
 
     async fn handle_interaction_create(&self, mut interaction: InteractionCreate) {

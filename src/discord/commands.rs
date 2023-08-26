@@ -74,7 +74,7 @@ impl From<TimeUnit> for char {
 
 pub struct Feedback {
     pub tx: mpsc::UnboundedSender<CommandPayload>,
-    pub rx: async_broadcast::Receiver<ChatEvent>,
+    pub rx: async_broadcast::InactiveReceiver<ChatEvent>,
 }
 
 impl Feedback {
@@ -98,23 +98,24 @@ impl Feedback {
 
         tokio::select! {
             biased;
-            embed = async {
-                while let Ok(payload) = self.rx.recv().await {
-                    if let Some(embed) = f(payload) {
-                        return embed;
+            result = async {
+                while let Ok(payload) = self.rx.activate_cloned().recv().await {
+                    if let Some(result) = f(payload) {
+                        return result;
                     }
                 }
 
                 unreachable!("The feedback channel was closed")
-            } => embed,
+            } => result,
             timeout = async {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                Err(FeedbackError::Custom("The command timed out".to_string()))
+                Err(FeedbackError::Custom("Couldn't find any command response after 10 seconds".to_string()))
             } => timeout,
         }
     }
 }
 
+#[derive(Debug)]
 pub enum FeedbackError {
     Response(Response),
     Custom(String),

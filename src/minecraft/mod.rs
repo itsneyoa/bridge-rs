@@ -53,7 +53,12 @@ fn handle_outgoing_commands(
     for event in reader.iter() {
         let command = match &event.command {
             MinecraftCommand::ChatMessage(command) => command.to_string(),
-            MinecraftCommand::Mute(_, _, _) => todo!(),
+            MinecraftCommand::Mute(player, duration, unit) => {
+                format!(
+                    "/g mute {player} {duration}{unit}",
+                    unit = char::from(*unit)
+                )
+            }
         };
 
         let Ok(entity) = entity.get_single() else {

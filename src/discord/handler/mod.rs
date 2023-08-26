@@ -97,7 +97,7 @@ impl MessageExt for Message {
                     channel_id,
                     id,
                     &RequestReactionType::Unicode {
-                        name: reaction.emoji(),
+                        name: reaction.emoji,
                     },
                 )
                 .await
