@@ -10,7 +10,7 @@ use lazy_regex::regex_captures;
 /// - `neyoa was promoted from Member to Staff`
 /// - `neyoa was demoted from Staff to Member`
 #[derive(Event, Debug, Clone)]
-pub enum Update {
+pub enum GuildEvent {
     Join(String),
     Leave(String),
     Kick {
@@ -29,7 +29,7 @@ pub enum Update {
     },
 }
 
-impl TryFrom<&str> for Update {
+impl TryFrom<&str> for GuildEvent {
     type Error = ();
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -37,14 +37,14 @@ impl TryFrom<&str> for Update {
         if let Some((_, user)) =
             regex_captures!(r#"^(?:\[[\w+]+\] )?(\w+) joined the guild!$"#, value)
         {
-            return Ok(Update::Join(user.to_string()));
+            return Ok(Self::Join(user.to_string()));
         }
 
         // neyoa left the guild.
         if let Some((_, user)) =
             regex_captures!(r#"^(?:\[[\w+]+\] )?(\w+) left the guild!$"#, value)
         {
-            return Ok(Update::Leave(user.to_string()));
+            return Ok(Self::Leave(user.to_string()));
         }
 
         // neyoa was kicked from the guild by neytwoa!
@@ -52,7 +52,7 @@ impl TryFrom<&str> for Update {
             r#"^(?:\[[\w+]+\] )?(\w+) was kicked from the guild by (?:\[[\w+]+\] )?(\w+)!$"#,
             value
         ) {
-            return Ok(Update::Kick {
+            return Ok(Self::Kick {
                 member: user.to_string(),
                 by: by.to_string(),
             });
@@ -63,7 +63,7 @@ impl TryFrom<&str> for Update {
             r#"^(?:\[[\w+]+\] )?(\w+) was promoted from (.+) to (.+)$"#,
             value
         ) {
-            return Ok(Update::Promotion {
+            return Ok(Self::Promotion {
                 member: user.to_string(),
                 old_rank: from.to_string(),
                 new_rank: to.to_string(),
@@ -75,7 +75,7 @@ impl TryFrom<&str> for Update {
             r#"^(?:\[[\w+]+\] )?(\w+) was demoted from (.+) to (.+)$"#,
             value
         ) {
-            return Ok(Update::Demotion {
+            return Ok(Self::Demotion {
                 member: user.to_string(),
                 old_rank: from.to_string(),
                 new_rank: to.to_string(),
@@ -94,7 +94,7 @@ mod tests {
     #[test_case("neyoa joined the guild!" ; "No Rank")]
     #[test_case("[VIP] neyoa joined the guild!" ; "Rank")]
     fn join(input: &'static str) {
-        if let Update::Join(user) = input.try_into().unwrap() {
+        if let GuildEvent::Join(user) = input.try_into().unwrap() {
             assert_eq!(user, "neyoa");
         } else {
             panic!("Expected Join")
@@ -104,7 +104,7 @@ mod tests {
     #[test_case("neyoa left the guild!" ; "No Rank")]
     #[test_case("[VIP] neyoa left the guild!" ; "Rank")]
     fn leave(input: &'static str) {
-        if let Update::Leave(user) = input.try_into().unwrap() {
+        if let GuildEvent::Leave(user) = input.try_into().unwrap() {
             assert_eq!(user, "neyoa");
         } else {
             panic!("Expected Leave")
@@ -116,7 +116,7 @@ mod tests {
     #[test_case("neyoa was kicked from the guild by [MVP++] neytwoa!" ; "Staff has Rank")]
     #[test_case("[MVP+] neyoa was kicked from the guild by [VIP] neytwoa!" ; "Both have Rank")]
     fn kick(input: &'static str) {
-        if let Update::Kick { member, by } = input.try_into().unwrap() {
+        if let GuildEvent::Kick { member, by } = input.try_into().unwrap() {
             assert_eq!(member, "neyoa");
             assert_eq!(by, "neytwoa");
         } else {
@@ -127,7 +127,7 @@ mod tests {
     #[test_case("neyoa was promoted from Member to Staff" ; "No Rank")]
     #[test_case("[MVP+] neyoa was promoted from Member to Staff" ; "Rank")]
     fn promotion(input: &'static str) {
-        if let Update::Promotion {
+        if let GuildEvent::Promotion {
             member,
             old_rank,
             new_rank,
@@ -144,7 +144,7 @@ mod tests {
     #[test_case("neyoa was demoted from Staff to Member" ; "No Rank")]
     #[test_case("[MVP+] neyoa was demoted from Staff to Member" ; "Rank")]
     fn demotion(input: &'static str) {
-        if let Update::Demotion {
+        if let GuildEvent::Demotion {
             member,
             old_rank,
             new_rank,

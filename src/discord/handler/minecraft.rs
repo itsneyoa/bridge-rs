@@ -1,6 +1,7 @@
 use crate::{
-    bridge::{Chat, DiscordPayload},
+    bridge::Chat,
     discord::{Discord, HTTP},
+    payloads::DiscordPayload,
 };
 use std::{ops::Deref, sync::Arc};
 use twilight_model::{
@@ -95,8 +96,8 @@ impl MinecraftHandler {
                 };
             }
 
-            DiscordPayload::MemberUpdate(update) => {
-                use crate::minecraft::guild_events::Update::*;
+            DiscordPayload::GuildEvent(update) => {
+                use crate::minecraft::chat_events::GuildEvent::*;
 
                 let embed = match update {
                     Join(member) => EmbedBuilder::new()
@@ -154,7 +155,7 @@ impl MinecraftHandler {
             }
 
             DiscordPayload::Moderation(moderation) => {
-                use crate::minecraft::guild_events::Moderation::*;
+                use crate::minecraft::chat_events::Moderation::*;
 
                 let member = match moderation {
                     Mute { ref member, .. } => member,
@@ -212,6 +213,8 @@ impl MinecraftHandler {
                     }
                 }
             }
+
+            DiscordPayload::CommandResponse(_response) => {}
         }
     }
 
@@ -242,20 +245,20 @@ impl MinecraftHandler {
 
     fn add_event_to_autocomplete(&self, event: &DiscordPayload) {
         use crate::discord::autocomplete;
-        use crate::minecraft::guild_events::{Moderation, Update};
+        use crate::minecraft::chat_events::{GuildEvent, Moderation};
 
         match event {
             DiscordPayload::ChatMessage { author, .. } => autocomplete::add_username(author),
             DiscordPayload::Toggle { member, .. } => autocomplete::add_username(member),
-            DiscordPayload::MemberUpdate(update) => match update {
-                Update::Join(member) => autocomplete::add_username(member),
-                Update::Leave(member) => autocomplete::remove_username(member),
-                Update::Kick { member, by } => {
+            DiscordPayload::GuildEvent(update) => match update {
+                GuildEvent::Join(member) => autocomplete::add_username(member),
+                GuildEvent::Leave(member) => autocomplete::remove_username(member),
+                GuildEvent::Kick { member, by } => {
                     autocomplete::add_username(member);
                     autocomplete::add_username(by);
                 }
-                Update::Promotion { member, .. } => autocomplete::add_username(member),
-                Update::Demotion { member, .. } => autocomplete::add_username(member),
+                GuildEvent::Promotion { member, .. } => autocomplete::add_username(member),
+                GuildEvent::Demotion { member, .. } => autocomplete::add_username(member),
             },
             DiscordPayload::Moderation(moderation) => match moderation {
                 Moderation::Mute { member, by, .. } => {
@@ -273,6 +276,7 @@ impl MinecraftHandler {
                     autocomplete::add_username(by);
                 }
             },
+            DiscordPayload::CommandResponse(_) => {}
         }
     }
 }

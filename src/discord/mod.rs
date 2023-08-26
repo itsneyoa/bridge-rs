@@ -11,9 +11,11 @@ mod colours {
 }
 
 use crate::{
-    bridge::{DiscordPayload, MinecraftPayload},
-    config, Result,
+    config,
+    payloads::{DiscordPayload, MinecraftPayload},
+    Result,
 };
+pub use commands::TimeUnit;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -30,6 +32,7 @@ pub static HTTP: Lazy<HttpClient> = Lazy::new(|| HttpClient::new(config().discor
 
 pub struct Discord {
     sender: mpsc::UnboundedSender<MinecraftPayload>,
+    receiver: async_broadcast::Receiver<DiscordPayload>,
     shard: Option<Shard>,
     cache: InMemoryCache,
     webhook_cache: WebhooksCache,
@@ -39,7 +42,10 @@ impl Discord {
     pub fn new(
         token: &str,
         intents: Intents,
-        sender: mpsc::UnboundedSender<MinecraftPayload>,
+        (sender, receiver): (
+            mpsc::UnboundedSender<MinecraftPayload>,
+            async_broadcast::Receiver<DiscordPayload>,
+        ),
     ) -> Self {
         let shard_config = ShardConfig::builder(token.to_string(), intents)
             .presence(
@@ -62,6 +68,7 @@ impl Discord {
 
         Self {
             sender,
+            receiver,
             shard: Some(shard),
             cache: InMemoryCache::builder()
                 .resource_types(
@@ -76,7 +83,7 @@ impl Discord {
         commands::register_commands().await
     }
 
-    pub fn start(mut self, mut receiver: mpsc::UnboundedReceiver<DiscordPayload>) {
+    pub fn start(mut self) {
         let mut shard = self.shard.take().expect("Shard was already taken");
         let discord = Arc::new(self);
 
@@ -104,10 +111,12 @@ impl Discord {
             });
         }
 
+        let mut receiver = discord.receiver.clone();
+
         // Handle events incoming from Minecraft
         tokio::spawn(async move {
             let handler = Arc::new(handler::Minecraft::new(discord));
-            while let Some(event) = receiver.recv().await {
+            while let Ok(event) = receiver.recv().await {
                 let handler = handler.clone();
 
                 tokio::spawn(async move { handler.handle_event(event).await });

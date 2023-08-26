@@ -1,10 +1,12 @@
 mod mpsc_adapter;
 pub mod recv;
-pub mod send;
 
+use crate::payloads::{MinecraftCommand, MinecraftPayload};
 use azalea::{
     app::{Plugin, Update},
+    chat::SendChatEvent,
     ecs::prelude::*,
+    entity::Local,
 };
 
 pub struct MinecraftHandler {
@@ -17,15 +19,11 @@ impl Plugin for MinecraftHandler {
         app.add_event::<recv::Message>()
             .add_event::<recv::Moderation>()
             .add_event::<recv::Toggle>()
-            .add_event::<recv::Update>()
-            .add_event::<send::ChatCommand>()
+            .add_event::<recv::GuildEvent>()
+            .add_event::<recv::Response>()
             .add_systems(
                 Update,
-                (
-                    recv::handle_incoming_chats,
-                    send::handle_outgoing_chats,
-                    transform_minecraft_payloads,
-                ),
+                (recv::handle_incoming_chats, transform_minecraft_payloads),
             );
 
         app.add_plugins(mpsc_adapter::MpscAdapterPlugin::new(
@@ -36,17 +34,36 @@ impl Plugin for MinecraftHandler {
 }
 
 fn transform_minecraft_payloads(
-    mut commands: Commands,
-    mut reader: EventReader<crate::bridge::MinecraftPayload>,
+    mut reader: EventReader<MinecraftPayload>,
+    mut writer: EventWriter<SendChatEvent>,
+    entity: Query<Entity, With<Local>>,
 ) {
-    use crate::bridge::MinecraftPayload;
-
     for event in reader.iter() {
-        match event {
-            MinecraftPayload::Chat(command) => {
-                let command = command.clone();
-                commands.add(|w: &mut World| w.send_event(send::ChatCommand(command)))
-            }
-        }
+        let command = match &event.command {
+            MinecraftCommand::ChatMessage(command) => command.to_string(),
+            MinecraftCommand::Mute(_, _, _) => todo!(),
+        };
+
+        let Ok(entity) = entity.get_single() else {
+            println!("Not in world");
+            return;
+        };
+
+        log::debug!("Sending to Minecraft: {}", command);
+
+        // TODO: Add cooldown
+
+        writer.send(SendChatEvent {
+            entity,
+            content: command,
+        });
+
+        event
+            .notify
+            .lock()
+            .take()
+            .expect("Notify was None")
+            .send(())
+            .expect("Minecraft command verifier receiver was dropped");
     }
 }

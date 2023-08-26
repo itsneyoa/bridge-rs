@@ -31,7 +31,7 @@ impl TryFrom<&str> for Moderation {
             r#"^(?:\[[\w+]+\] )?(\w+) has muted (?:\[[\w+]+\] )?(\w+) for (\d{1,2})([mhd])$"#,
             value
         ) {
-            return Ok(Moderation::Mute {
+            return Ok(Self::Mute {
                 member: Some(user.to_string()),
                 by: by.to_string(),
                 length: length.parse().map_err(|_| ())?,
@@ -44,7 +44,7 @@ impl TryFrom<&str> for Moderation {
             r#"^(?:\[[\w+]+\] )?(\w+) has unmuted (?:\[[\w+]+\] )?(\w+)$"#,
             value
         ) {
-            return Ok(Moderation::Unmute {
+            return Ok(Self::Unmute {
                 member: Some(user.to_string()),
                 by: by.to_string(),
             });
@@ -55,7 +55,7 @@ impl TryFrom<&str> for Moderation {
             r#"^(?:\[[\w+]+\] )?(\w+) has muted the guild chat for (\d{1,2})([mhd])$"#,
             value
         ) {
-            return Ok(Moderation::Mute {
+            return Ok(Self::Mute {
                 member: None,
                 by: user.to_string(),
                 length: length.parse().map_err(|_| ())?,
@@ -68,7 +68,7 @@ impl TryFrom<&str> for Moderation {
             r#"^(?:\[[\w+]+\] )?(\w+) has unmuted the guild chat!$"#,
             value
         ) {
-            return Ok(Moderation::Unmute {
+            return Ok(Self::Unmute {
                 member: None,
                 by: user.to_string(),
             });

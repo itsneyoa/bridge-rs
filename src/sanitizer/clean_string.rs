@@ -68,28 +68,10 @@ impl Add<CleanString> for &str {
     }
 }
 
-pub struct ValidIGN(String);
-
-impl ValidIGN {
-    pub fn new(input: impl ToString) -> Option<Self> {
-        let input = input.to_string();
-        println!("{}", input.len());
-
-        if input.len() >= 2 && input.len() <= 16 {
-            input
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                .then_some(Self(input))
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_case::test_case;
+    // use test_case::test_case;
 
     #[test]
     fn clean_string_is_identical() {
@@ -101,21 +83,4 @@ mod tests {
     }
 
     // TODO: Add more tests
-
-    #[test_case("alpha_bravo")]
-    #[test_case("AlphaBravo123")]
-    #[test_case("0123456789")]
-    #[test_case("ab")]
-    #[test_case("0123456789ABCDEF")]
-    fn valid_ign_is_accepted(input: &str) {
-        assert!(ValidIGN::new(input).is_some());
-    }
-
-    #[test_case("alpha bravo" ; "Contains space")]
-    #[test_case("AlphaBravo123!" ; "Contains special character")]
-    #[test_case("0123456789ABCDEF_" ; "Too long")]
-    #[test_case("a" ; "Too short")]
-    fn invalid_ign_is_rejected(input: &str) {
-        assert!(ValidIGN::new(input).is_none());
-    }
 }

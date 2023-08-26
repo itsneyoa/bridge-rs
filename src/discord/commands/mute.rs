@@ -1,4 +1,16 @@
-use super::prelude::*;
+use super::{embed_from_result, Feedback, FeedbackError, RunCommand, TimeUnit};
+use crate::{
+    minecraft::chat_events::{Moderation, Response},
+    payloads::{DiscordPayload, MinecraftCommand},
+    sanitizer::ValidIGN,
+};
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use twilight_interactions::command::{CommandModel, CreateCommand};
+use twilight_model::{
+    application::interaction::Interaction, channel::message::Embed, guild::Permissions,
+};
 
 #[derive(CommandModel, CreateCommand)]
 #[command(
@@ -24,13 +36,60 @@ fn permissions() -> Permissions {
     Permissions::MUTE_MEMBERS | Permissions::MODERATE_MEMBERS
 }
 
+#[async_trait]
 impl RunCommand for MuteCommand {
-    fn run(&self, _interaction: &Interaction) -> InteractionResponseData {
-        InteractionResponseDataBuilder::new()
-            .content(format!(
-                "Muting {} for {} {:?}",
-                self.player, self.duration, self.unit
-            ))
-            .build()
+    async fn run(&self, _interaction: &Interaction, feedback: Arc<Mutex<Feedback>>) -> Embed {
+        let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
+            return embed_from_result(Err(FeedbackError::Custom(format!(
+                "`{}` is not a valid IGN",
+                self.player
+            ))));
+        };
+
+        let Ok(duration) = u8::try_from(self.duration) else {
+            return embed_from_result(Err(FeedbackError::Custom(format!(
+                "`{}` is not a valid mute duration",
+                self.duration
+            ))));
+        };
+
+        let command = MinecraftCommand::Mute(player, duration, self.unit);
+
+        embed_from_result(
+            feedback
+                .lock()
+                .await
+                .execute(command, |payload| match payload {
+                    DiscordPayload::Moderation(Moderation::Mute {
+                        member,
+                        length,
+                        unit,
+                        ..
+                    }) => {
+                        if let Some(member) = member {
+                            if member.eq_ignore_ascii_case(self.player.trim()) {
+                                return Some(Ok(format!(
+                                    "{member} has been muted for {length}{unit}"
+                                )));
+                            }
+                        }
+
+                        None
+                    }
+
+                    DiscordPayload::CommandResponse(
+                        ref response @ (Response::NotInGuild(ref user)
+                        | Response::PlayerNotFound(ref user)),
+                    ) => {
+                        if user == &self.player {
+                            return Some(Err(response.clone().into()));
+                        }
+
+                        None
+                    }
+                    _ => None,
+                })
+                .await,
+        )
     }
 }

@@ -3,11 +3,9 @@ use crate::{
     discord::{status, Discord},
     errors,
     minecraft::MinecraftBridgePlugin,
-    sanitizer::CleanString,
 };
 use azalea::{
     app::PluginGroup,
-    ecs::event::Event as EventTrait,
     prelude::*,
     swarm::{prelude::*, DefaultSwarmPlugins},
     ClientInformation, DefaultBotPlugins, DefaultPlugins,
@@ -26,8 +24,8 @@ pub async fn run() -> errors::Result<()> {
         Account::offline("Bridge")
     };
 
-    let (to_discord, from_minecraft) = mpsc::unbounded_channel::<DiscordPayload>();
-    let (to_minecraft, from_discord) = mpsc::unbounded_channel::<MinecraftPayload>();
+    let (to_discord, from_minecraft) = async_broadcast::broadcast(32);
+    let (to_minecraft, from_discord) = mpsc::unbounded_channel();
 
     let discord = Discord::new(
         &config().discord_token,
@@ -35,12 +33,12 @@ pub async fn run() -> errors::Result<()> {
             | Intents::GUILD_MESSAGES
             | Intents::MESSAGE_CONTENT
             | Intents::GUILD_WEBHOOKS,
-        to_minecraft,
+        (to_minecraft, from_minecraft),
     );
 
     discord.register_commands().await?;
 
-    discord.start(from_minecraft);
+    discord.start();
 
     status::send(status::Online).await;
 
@@ -121,28 +119,6 @@ async fn handle_swarm(
     };
 
     Ok(())
-}
-
-/// A Payload sent to Minecraft
-#[derive(EventTrait, Debug, Clone)]
-pub enum MinecraftPayload {
-    Chat(CleanString),
-}
-
-/// A Payload sent to Discord
-#[derive(EventTrait, Debug, Clone)]
-pub enum DiscordPayload {
-    ChatMessage {
-        author: String,
-        content: String,
-        chat: Chat,
-    },
-    Toggle {
-        member: String,
-        online: bool,
-    },
-    MemberUpdate(crate::minecraft::guild_events::Update),
-    Moderation(crate::minecraft::guild_events::Moderation),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

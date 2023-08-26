@@ -1,15 +1,17 @@
 use super::MessageExt;
 use crate::{
-    bridge::MinecraftPayload,
+    bridge::Chat,
     config,
     discord::{
         autocomplete,
-        commands::{self, RunCommand},
+        commands::{self, Feedback, RunCommand},
         reactions, Discord, HTTP,
     },
+    payloads::{DiscordPayload, MinecraftCommand},
     sanitizer::CleanString,
 };
 use std::{ops::Deref, sync::Arc};
+use tokio::sync::Mutex;
 use twilight_gateway::Event;
 use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::{
@@ -26,19 +28,28 @@ use twilight_model::{
 use twilight_util::builder::{embed::EmbedBuilder, InteractionResponseDataBuilder};
 use twilight_webhook::cache::PermissionsSource;
 
-pub struct DiscordHandler(Arc<Discord>);
+pub struct DiscordHandler {
+    discord: Arc<Discord>,
+    feedback: Arc<Mutex<Feedback>>,
+}
 
 impl Deref for DiscordHandler {
     type Target = Discord;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.discord
     }
 }
 
 impl DiscordHandler {
     pub fn new(discord: Arc<Discord>) -> Self {
-        Self(discord)
+        Self {
+            feedback: Arc::new(Mutex::new(Feedback {
+                tx: discord.sender.clone(),
+                rx: discord.receiver.new_receiver(),
+            })),
+            discord,
+        }
     }
 
     pub async fn handle_discord_event(&self, event: Event) {
@@ -103,13 +114,18 @@ impl DiscordHandler {
             return;
         }
 
-        let prefix = match message.channel_id.get() {
-            id if id == config().channels.guild => "gc",
-            id if id == config().channels.officer => "oc",
+        let dest_chat = match message.channel_id.get() {
+            id if id == config().channels.guild => Chat::Guild,
+            id if id == config().channels.officer => Chat::Officer,
             _ => return,
         };
 
-        let mut command = format!("/{prefix} ").as_str() + author + ": " + content;
+        let prefix = match dest_chat {
+            Chat::Guild => "gc",
+            Chat::Officer => "oc",
+        };
+
+        let mut command = format!("/{prefix} ").as_str() + author.clone() + ": " + content.clone();
 
         if author_cleaned || content_cleaned {
             message.react(reactions::ILLEGAL_CHARACTERS);
@@ -120,9 +136,32 @@ impl DiscordHandler {
             command.truncate(256);
         }
 
-        self.sender
-            .send(MinecraftPayload::Chat(command))
-            .expect("Discord -> Minecraft send channel closed")
+        let command = MinecraftCommand::ChatMessage(command);
+
+        if let Err(err) = self
+            .feedback
+            .lock()
+            .await
+            .execute(command, |payload| match payload {
+                DiscordPayload::ChatMessage {
+                    author,
+                    content: msg_content,
+                    chat,
+                } if chat == dest_chat
+                    && msg_content.starts_with(author.as_str())
+                    && msg_content.ends_with(content.as_str()) =>
+                {
+                    Some(Ok(String::new()))
+                }
+                DiscordPayload::CommandResponse(response) => {
+                    todo!("handle gc/oc command responses")
+                }
+                _ => None,
+            })
+            .await
+        {
+            todo!("handle errors in chat messages")
+        }
     }
 
     async fn handle_interaction_create(&self, mut interaction: InteractionCreate) {
@@ -185,15 +224,18 @@ impl DiscordHandler {
                     .await?;
 
                 let payload = match command {
-                    commands::GuildCommand::Help(command) => command.run(&interaction),
-                    commands::GuildCommand::Mute(command) => command.run(&interaction),
+                    commands::GuildCommand::Help(command) => {
+                        command.run(&interaction, self.feedback.clone()).await
+                    }
+                    commands::GuildCommand::Mute(command) => {
+                        command.run(&interaction, self.feedback.clone()).await
+                    }
                 };
 
                 client
                     .update_response(&interaction.token)
-                    .payload_json(
-                        &serde_json::to_vec(&payload).expect("Failed to serialise payload"),
-                    )
+                    .embeds(Some(&[payload]))
+                    .expect("Invalid embeds in response")
                     .await
                     .map(|_| ())
             }

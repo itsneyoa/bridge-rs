@@ -5,11 +5,12 @@ use azalea::{
         prelude::*,
     },
 };
+use futures::executor::block_on;
 use parking_lot::Mutex;
 use std::{ops::Deref, sync::Arc};
 use tokio::sync::mpsc;
 
-type Sender<S> = mpsc::UnboundedSender<S>;
+type Sender<S> = async_broadcast::Sender<S>;
 type Receiver<R> = Arc<Mutex<mpsc::UnboundedReceiver<R>>>;
 
 pub struct MpscAdapterPlugin<S: Event + Clone, R: Event> {
@@ -65,7 +66,10 @@ fn handle_recv<R: Event>(rx: Res<ResourceWrapper<Receiver<R>>>, mut writer: Even
 
 fn handle_send<S: Event + Clone>(mut reader: EventReader<S>, tx: Res<ResourceWrapper<Sender<S>>>) {
     for event in reader.iter() {
-        tx.send(event.clone())
-            .expect("Mpsc Adapter send channel closed");
+        block_on(async {
+            tx.broadcast(event.clone())
+                .await
+                .expect("Mpsc Adapter send channel closed")
+        });
     }
 }

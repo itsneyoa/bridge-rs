@@ -3,6 +3,7 @@ mod config;
 mod discord;
 mod errors;
 mod minecraft;
+mod payloads;
 mod sanitizer;
 
 pub use config::config;

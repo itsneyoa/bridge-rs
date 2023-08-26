@@ -23,7 +23,7 @@ impl TryFrom<&str> for Message {
             r#"^Guild > (?:\[[\w+]+?\] )?(\w+)(?: \[\w+?\])?: (.+)$"#,
             value
         ) {
-            return Ok(Message {
+            return Ok(Self {
                 author: user.to_string(),
                 content: message.to_string(),
                 chat: Chat::Guild,
@@ -35,7 +35,7 @@ impl TryFrom<&str> for Message {
             r#"^Officer > (?:\[[\w+]+?\] )?(\w+)(?: \[\w+?\])?: (.+)$"#,
             value
         ) {
-            return Ok(Message {
+            return Ok(Self {
                 author: user.to_string(),
                 content: message.to_string(),
                 chat: Chat::Officer,

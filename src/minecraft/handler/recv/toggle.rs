@@ -18,7 +18,7 @@ impl TryFrom<&str> for Toggle {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         // Guild > neyoa joined.
         if let Some((_, user)) = regex_captures!(r#"^Guild > (\w+) joined.$"#, value) {
-            return Ok(Toggle {
+            return Ok(Self {
                 member: user.to_string(),
                 online: true,
             });
@@ -26,7 +26,7 @@ impl TryFrom<&str> for Toggle {
 
         // Guild > neyoa left.
         if let Some((_, user)) = regex_captures!(r#"^Guild > (\w+) left.$"#, value) {
-            return Ok(Toggle {
+            return Ok(Self {
                 member: user.to_string(),
                 online: false,
             });
