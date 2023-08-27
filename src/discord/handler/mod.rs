@@ -4,10 +4,11 @@ mod minecraft;
 pub use discord::DiscordHandler as Discord;
 pub use minecraft::MinecraftHandler as Minecraft;
 
-use super::{reactions, HTTP};
+use super::reactions;
 use lazy_regex::regex_replace_all;
+use std::sync::Arc;
 use twilight_cache_inmemory::InMemoryCache;
-use twilight_http::request::channel::reaction::RequestReactionType;
+use twilight_http::{request::channel::reaction::RequestReactionType, Client as HttpClient};
 use twilight_model::channel::{message::Mention, Message};
 
 trait MessageExt {
@@ -19,7 +20,7 @@ trait MessageExt {
     /// channel mentions replaced with their names, and role mentions replaced with their names
     fn content_clean(&self, cache: &InMemoryCache) -> String;
     /// Reacts to the message with the given reaction
-    fn react(&self, reaction: reactions::Reaction);
+    fn react(&self, http: Arc<HttpClient>, reaction: reactions::Reaction);
 }
 
 impl MessageExt for Message {
@@ -87,12 +88,12 @@ impl MessageExt for Message {
         result
     }
 
-    fn react(&self, reaction: reactions::Reaction) {
+    fn react(&self, http: Arc<HttpClient>, reaction: reactions::Reaction) {
         let channel_id = self.channel_id;
         let id = self.id;
 
         tokio::spawn(async move {
-            if let Err(err) = HTTP
+            if let Err(err) = http
                 .create_reaction(
                     channel_id,
                     id,

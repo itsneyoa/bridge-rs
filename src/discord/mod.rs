@@ -11,12 +11,10 @@ mod colours {
 }
 
 use crate::{
-    config,
     payloads::{command::CommandPayload, events::ChatEvent},
     Result,
 };
 pub use commands::TimeUnit;
-use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
@@ -28,14 +26,13 @@ use twilight_model::gateway::{
 };
 use twilight_webhook::cache::WebhooksCache;
 
-pub static HTTP: Lazy<HttpClient> = Lazy::new(|| HttpClient::new(config().discord_token.clone()));
-
 pub struct Discord {
     sender: mpsc::UnboundedSender<CommandPayload>,
     receiver: async_broadcast::Receiver<ChatEvent>,
     shard: Option<Shard>,
     cache: InMemoryCache,
     webhook_cache: WebhooksCache,
+    pub http: Arc<HttpClient>,
 }
 
 impl Discord {
@@ -53,7 +50,6 @@ impl Discord {
                     vec![MinimalActivity {
                         kind: twilight_model::gateway::presence::ActivityType::Watching,
                         name: "Guild Chat".to_string(),
-                        // TODO: This could be replaced with the gh page
                         url: None,
                     }
                     .into()],
@@ -66,6 +62,12 @@ impl Discord {
             .build();
         let shard = Shard::with_config(ShardId::ONE, shard_config);
 
+        let http = Arc::new(HttpClient::new(token.to_string()));
+
+        status::HTTP
+            .set(http.clone())
+            .expect("Status HTTP Client already set");
+
         Self {
             sender,
             receiver,
@@ -76,11 +78,12 @@ impl Discord {
                 )
                 .build(),
             webhook_cache: WebhooksCache::new(),
+            http,
         }
     }
 
     pub async fn register_commands(&self) -> Result<()> {
-        commands::register_commands().await
+        commands::register_commands(&self.http).await
     }
 
     pub fn start(mut self) {

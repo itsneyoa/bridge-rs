@@ -4,6 +4,8 @@ use parking_lot::Mutex;
 use sorted_vec::SortedSet;
 use std::collections::HashSet;
 
+use crate::minecraft;
+
 static USERNAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static MATCHER: Lazy<SkimMatcherV2> = Lazy::new(|| SkimMatcherV2::default().ignore_case());
 
@@ -29,7 +31,13 @@ impl Ord for MatcherResult {
 }
 
 pub fn add_username(username: impl ToString) {
-    USERNAMES.lock().insert(username.to_string());
+    let username = username.to_string();
+
+    if username == *minecraft::USERNAME.wait().read() {
+        return; // Don't add the bot's username to autocomplete
+    }
+
+    USERNAMES.lock().insert(username);
 }
 
 pub fn remove_username(username: &str) {

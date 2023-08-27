@@ -1,6 +1,7 @@
 use crate::{
     bridge::Chat,
-    discord::{Discord, HTTP},
+    discord::Discord,
+    minecraft,
     payloads::events::{self, ChatEvent, Message, Toggle},
 };
 use std::{ops::Deref, sync::Arc};
@@ -37,9 +38,14 @@ impl MinecraftHandler {
                 content,
                 chat,
             }) => {
+                if author == *minecraft::USERNAME.wait().read() {
+                    return; // Don't send our own messages to guild chat
+                }
+
                 let webhook = self.get_webhook(chat).await;
 
-                if let Err(err) = HTTP
+                if let Err(err) = self
+                    .http
                     .execute_webhook(
                         webhook.id,
                         webhook.token.as_ref().expect("Webhook has no token"),
@@ -75,7 +81,8 @@ impl MinecraftHandler {
                     })
                     .build();
 
-                if let Err(err) = HTTP
+                if let Err(err) = self
+                    .http
                     .execute_webhook(
                         webhook.id,
                         webhook.token.as_ref().expect("Webhook has no token"),
@@ -223,7 +230,8 @@ impl MinecraftHandler {
     }
 
     async fn send_embed(&self, channel: Id<ChannelMarker>, embed: Embed) {
-        if let Err(err) = HTTP
+        if let Err(err) = self
+            .http
             .create_message(channel)
             .embeds(&[embed])
             .expect("Failed to add embed")
@@ -238,7 +246,7 @@ impl MinecraftHandler {
         chat: Chat,
     ) -> dashmap::mapref::one::Ref<Id<ChannelMarker>, Webhook> {
         self.webhook_cache
-            .get_infallible(&HTTP, Id::new(chat.into()), "Bridge")
+            .get_infallible(&self.http, Id::new(chat.into()), "Bridge")
             .await
             .expect("Failed to get webhook")
     }

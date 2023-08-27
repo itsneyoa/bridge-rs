@@ -1,5 +1,6 @@
 use super::{embed_from_result, Feedback, FeedbackError, RunCommand, TimeUnit};
 use crate::{
+    minecraft,
     payloads::{
         command,
         events::{ChatEvent, Moderation, Response},
@@ -63,31 +64,21 @@ impl RunCommand for MuteCommand {
                 .await
                 .execute(command, |payload| match payload {
                     ChatEvent::Moderation(Moderation::Mute {
-                        member,
+                        member: ref _option @ Some(ref member),
                         length,
                         unit,
-                        ..
-                    }) => {
-                        if let Some(member) = member {
-                            if member.eq_ignore_ascii_case(self.player.trim()) {
-                                return Some(Ok(format!(
-                                    "{member} has been muted for {length}{unit}"
-                                )));
-                            }
-                        }
-
-                        None
+                        by,
+                    }) if member.eq_ignore_ascii_case(self.player.trim())
+                        && by == *minecraft::USERNAME.wait().read() =>
+                    {
+                        Some(Ok(format!("{member} has been muted for {length}{unit}")))
                     }
 
                     ChatEvent::CommandResponse(
                         ref response @ (Response::NotInGuild(ref user)
                         | Response::PlayerNotFound(ref user)),
-                    ) => {
-                        if user == &self.player {
-                            return Some(Err(response.clone().into()));
-                        }
-
-                        None
+                    ) if user.eq_ignore_ascii_case(self.player.trim()) => {
+                        Some(Err(response.clone().into()))
                     }
                     _ => None,
                 })

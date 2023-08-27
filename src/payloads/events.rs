@@ -9,14 +9,19 @@ pub use {
     event::GuildEvent, message::Message, moderation::Moderation, response::Response, toggle::Toggle,
 };
 
-/// A Payload sent to Discord
 #[derive(Event, Debug, Clone)]
 pub enum ChatEvent {
+    /// A message sent to guild/officer chat
     Message(Message),
+    /// A player joined/left the server
     Toggle(Toggle),
+    /// Player join/leave/kick/promote/demote event
     GuildEvent(GuildEvent),
+    /// Player/guild chat muted or unmuted
     Moderation(Moderation),
+    /// Response to a command
     CommandResponse(Response),
+    /// A message which isn't recognised
     Unknown(String),
 }
 

@@ -1,4 +1,5 @@
 mod mpsc_adapter;
+pub mod swarm;
 
 use crate::payloads::{
     command::{CommandPayload, MinecraftCommand},
@@ -9,10 +10,16 @@ use azalea::{
     chat::{ChatReceivedEvent, SendChatEvent},
     ecs::prelude::*,
     entity::Local,
+    packet_handling::PacketEvent,
+    protocol::packets::game::ClientboundGamePacket,
+    GameProfileComponent,
 };
-use parking_lot::Mutex;
+use once_cell::sync::OnceCell;
+use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+pub static USERNAME: OnceCell<RwLock<String>> = OnceCell::new();
 
 type Sender = async_broadcast::Sender<ChatEvent>;
 type Receiver = Arc<Mutex<mpsc::UnboundedReceiver<CommandPayload>>>;
@@ -29,11 +36,31 @@ impl Plugin for MinecraftBridgePlugin {
             self.receiver.clone(),
         ));
 
-        app.add_systems(Update, (handle_incoming_chats, handle_outgoing_commands));
+        app.add_systems(
+            Update,
+            (
+                handle_incoming_chats,
+                handle_outgoing_commands,
+                update_username,
+            ),
+        );
     }
 }
 
-pub fn handle_incoming_chats(
+fn update_username(
+    mut reader: EventReader<PacketEvent>,
+    query: Query<&GameProfileComponent, With<Local>>,
+) {
+    for event in reader.iter() {
+        if let ClientboundGamePacket::Login(_) = &event.packet {
+            let ign = &query.get_single().expect("Not in world").name;
+
+            *USERNAME.get_or_init(|| RwLock::new(ign.clone())).write() = ign.clone();
+        }
+    }
+}
+
+fn handle_incoming_chats(
     mut reader: EventReader<ChatReceivedEvent>,
     mut writer: EventWriter<ChatEvent>,
 ) {

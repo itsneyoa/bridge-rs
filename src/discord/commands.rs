@@ -1,7 +1,7 @@
 mod help;
 mod mute;
 
-use super::{colours, HTTP};
+use super::colours;
 use crate::{
     payloads::{
         command::{CommandPayload, MinecraftCommand},
@@ -26,9 +26,9 @@ pub enum GuildCommand {
     Mute(mute::MuteCommand),
 }
 
-pub async fn register_commands() -> Result<()> {
+pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
     let application_id = {
-        let response = HTTP.current_user_application().await?;
+        let response = http.current_user_application().await?;
         response
             .model()
             .await
@@ -36,7 +36,7 @@ pub async fn register_commands() -> Result<()> {
             .id
     };
 
-    Ok(HTTP
+    Ok(http
         .interaction(application_id)
         .set_global_commands(&[GuildCommand::create_command().into()])
         .await

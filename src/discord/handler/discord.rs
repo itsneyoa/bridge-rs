@@ -5,8 +5,9 @@ use crate::{
     discord::{
         autocomplete,
         commands::{self, Feedback, RunCommand},
-        reactions, Discord, HTTP,
+        reactions, Discord,
     },
+    minecraft,
     payloads::{
         command::MinecraftCommand,
         events::{ChatEvent, Message},
@@ -63,7 +64,7 @@ impl DiscordHandler {
             .webhook_cache
             .update(
                 &event,
-                &HTTP,
+                &self.http,
                 // The `permissions` argument should rarely be used, as it's only needed when a `WebhookUpdate` event is recieved
                 // so it's fine to create a request to get the required data
                 PermissionsSource::Request,
@@ -113,7 +114,7 @@ impl DiscordHandler {
             CleanString::new(message.content_clean(&self.cache).to_string());
 
         if author.is_empty() || content.is_empty() {
-            message.react(reactions::EMPTY_FIELD);
+            message.react(self.http.clone(), reactions::EMPTY_FIELD);
             return;
         }
 
@@ -131,11 +132,11 @@ impl DiscordHandler {
         let mut command = format!("/{prefix} ").as_str() + author.clone() + ": " + content.clone();
 
         if author_cleaned || content_cleaned {
-            message.react(reactions::ILLEGAL_CHARACTERS);
+            message.react(self.http.clone(), reactions::ILLEGAL_CHARACTERS);
         }
 
         if command.len() > 256 {
-            message.react(reactions::TOO_LONG);
+            message.react(self.http.clone(), reactions::TOO_LONG);
             command.truncate(256);
         }
 
@@ -147,10 +148,14 @@ impl DiscordHandler {
             .await
             .execute(command, |payload| match payload {
                 ChatEvent::Message(Message {
+                    author: ref msg_author,
                     content: ref msg_content,
                     chat,
-                    ..
                 }) if chat == dest_chat
+                    && minecraft::USERNAME
+                        .wait()
+                        .read()
+                        .eq_ignore_ascii_case(msg_author)
                     && msg_content.starts_with(author.as_str())
                     && msg_content.ends_with(content.as_str()) =>
                 {
@@ -162,7 +167,7 @@ impl DiscordHandler {
             .is_err()
         {
             // HACK: Currently, if an error is returned then we timed out
-            message.react(reactions::TIMED_OUT);
+            message.react(self.http.clone(), reactions::TIMED_OUT);
         };
     }
 
@@ -206,7 +211,7 @@ impl DiscordHandler {
         interaction: InteractionCreate,
         data: CommandData,
     ) -> Result<(), twilight_http::Error> {
-        let client = HTTP.interaction(interaction.application_id);
+        let client = self.http.interaction(interaction.application_id);
 
         match data.name.as_str() {
             commands::GuildCommand::NAME => {
@@ -293,7 +298,7 @@ impl DiscordHandler {
             return Err(anyhow::anyhow!("Could not find focused field"));
         };
 
-        let client = HTTP.interaction(interaction.application_id);
+        let client = self.http.interaction(interaction.application_id);
         Ok(client
             .create_response(
                 interaction.id,

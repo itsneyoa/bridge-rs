@@ -1,8 +1,11 @@
 use super::colours;
 use crate::{config, Error};
-use std::time::SystemTime;
+use once_cell::sync::OnceCell;
+use std::{sync::Arc, time::SystemTime};
 use twilight_model::{id::Id, util::Timestamp};
 use twilight_util::builder::embed::{EmbedAuthorBuilder, EmbedBuilder};
+
+pub(super) static HTTP: OnceCell<Arc<twilight_http::Client>> = OnceCell::new();
 
 #[derive(Debug)]
 pub enum Status<'a> {
@@ -74,7 +77,8 @@ pub async fn send(status: Status<'_>) {
         (config().channels.guild, guild_embed),
         (config().channels.officer, officer_embed),
     ] {
-        if let Err(e) = super::HTTP
+        if let Err(e) = HTTP
+            .wait()
             .create_message(Id::new(channel_id))
             .embeds(&[embed.build()])
             .expect("Embed is invalid")
