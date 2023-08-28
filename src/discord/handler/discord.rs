@@ -161,6 +161,7 @@ impl DiscordHandler {
                 {
                     Some(Ok(String::new()))
                 }
+
                 _ => None,
             })
             .await

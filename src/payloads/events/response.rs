@@ -6,7 +6,6 @@ pub enum Response {
     NotInGuild(String),
     NoPermission,
     PlayerNotFound(String),
-    UnknownCommand,
     CommandDisabled,
 }
 
@@ -36,10 +35,6 @@ impl TryFrom<&str> for Response {
             return Ok(Self::PlayerNotFound(username.to_string()));
         }
 
-        if value.starts_with(r#"Unknown command. Type "/help" for help."#) {
-            return Ok(Self::UnknownCommand);
-        }
-
         if value == r#"This command is currently disabled."# {
             return Ok(Self::CommandDisabled);
         }
@@ -54,7 +49,6 @@ impl ToString for Response {
             Self::NotInGuild(user) => format!("`{user}` is not in the guild"),
             Self::NoPermission => "I don't have permission to do that".to_string(),
             Self::PlayerNotFound(user) => format!("`{user}` could not be found"),
-            Self::UnknownCommand => "Unknown command".to_string(),
             Self::CommandDisabled => "This command is currently disabled".to_string(),
         }
     }
@@ -81,11 +75,6 @@ mod tests {
     #[test_case("Can't find a player by the name of neyoa")]
     fn player_not_found(input: &str) {
         assert!(Response::try_from(input).unwrap() == Response::PlayerNotFound("neyoa".to_string()))
-    }
-
-    #[test_case("Unknown command. Type \"/help\" for help.")]
-    fn unknown_command(input: &str) {
-        assert!(Response::try_from(input).unwrap() == Response::UnknownCommand)
     }
 
     #[test_case("This command is currently disabled.")]

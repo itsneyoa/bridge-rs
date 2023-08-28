@@ -11,18 +11,21 @@ use azalea::{
     ecs::prelude::*,
     entity::Local,
     packet_handling::PacketEvent,
+    prelude::*,
     protocol::packets::game::ClientboundGamePacket,
     GameProfileComponent,
 };
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::{Mutex, RwLock};
-use std::sync::Arc;
-use tokio::sync::mpsc;
+use std::{collections::VecDeque, sync::Arc, time::Instant};
+use tokio::sync::{mpsc, oneshot};
 
 pub static USERNAME: OnceCell<RwLock<String>> = OnceCell::new();
 
 type Sender = async_broadcast::Sender<ChatEvent>;
 type Receiver = Arc<Mutex<mpsc::UnboundedReceiver<CommandPayload>>>;
+
+static NOW: Lazy<Instant> = Lazy::new(Instant::now);
 
 pub struct MinecraftBridgePlugin {
     pub sender: Sender,
@@ -42,8 +45,14 @@ impl Plugin for MinecraftBridgePlugin {
                 handle_incoming_chats,
                 handle_outgoing_commands,
                 update_username,
+                drain_message_queue,
             ),
         );
+
+        app.insert_resource(ChatQueue {
+            messages: VecDeque::new(),
+            ticks: 0,
+        });
     }
 }
 
@@ -72,11 +81,13 @@ fn handle_incoming_chats(
     }
 }
 
-fn handle_outgoing_commands(
-    mut reader: EventReader<CommandPayload>,
-    mut writer: EventWriter<SendChatEvent>,
-    entity: Query<Entity, With<Local>>,
-) {
+#[derive(Resource)]
+struct ChatQueue {
+    pub messages: VecDeque<(String, oneshot::Sender<()>)>,
+    pub ticks: usize,
+}
+
+fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: ResMut<ChatQueue>) {
     for event in reader.iter() {
         let command = match &event.command {
             MinecraftCommand::ChatMessage(command) => command.to_string(),
@@ -88,26 +99,45 @@ fn handle_outgoing_commands(
             }
         };
 
-        let Ok(entity) = entity.get_single() else {
-            println!("Not in world");
-            return;
-        };
-
         log::debug!("Sending to Minecraft: {}", command);
 
-        // TODO: Add cooldown
-
-        writer.send(SendChatEvent {
-            entity,
-            content: command,
-        });
-
-        event
-            .notify
-            .lock()
-            .take()
-            .expect("Notify was None")
-            .send(())
-            .expect("Minecraft command verifier receiver was dropped");
+        queue.messages.push_back((
+            command,
+            event.notify.lock().take().expect("Notify was None"),
+        ));
     }
+}
+
+const DELAY_BETWEEN_MESSAGES: usize = 5;
+
+fn drain_message_queue(
+    mut queue: ResMut<ChatQueue>,
+    mut query: Query<Entity, With<Local>>,
+    mut writer: EventWriter<SendChatEvent>,
+) {
+    let Ok(entity) = query.get_single_mut() else {
+        return;
+    };
+
+    if queue.ticks > 0 {
+        return queue.ticks -= 1;
+    }
+
+    let Some((message, notify)) = queue.messages.pop_front() else {
+        return;
+    };
+
+    // Wait [`DELAY_BETWEEN_MESSAGES`] ticks between messages
+    queue.ticks += DELAY_BETWEEN_MESSAGES;
+
+    writer.send(SendChatEvent {
+        entity,
+        content: message.clone(),
+    });
+
+    println!("{}", NOW.elapsed().as_secs());
+
+    notify
+        .send(())
+        .expect("Minecraft command verifier receiver was dropped");
 }
