@@ -89,14 +89,22 @@ struct ChatQueue {
 
 fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: ResMut<ChatQueue>) {
     for event in reader.iter() {
+        use MinecraftCommand::*;
+
         let command = match &event.command {
-            MinecraftCommand::ChatMessage(command) => command.to_string(),
-            MinecraftCommand::Mute(player, duration, unit) => {
+            ChatMessage(command) => command.to_string(),
+            Mute(player, duration, unit) => {
                 format!(
                     "/g mute {player} {duration}{unit}",
                     unit = char::from(*unit)
                 )
             }
+            Unmute(player) => format!("/g unmute {player}"),
+            Invite(player) => format!("/g invite {player}"),
+            Kick(player, reason) => format!("/g kick {player} {reason}"),
+            Demote(player) => format!("/g demote {player}"),
+            Promote(player) => format!("/g promote {player}"),
+            SetRank(player, rank) => format!("/g setrank {player} {rank}"),
         };
 
         log::debug!("Sending to Minecraft: {}", command);

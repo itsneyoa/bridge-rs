@@ -4,23 +4,15 @@ use std::ops::{Add, Deref, DerefMut};
 #[derive(Debug, Clone)]
 pub struct CleanString(String);
 
-impl CleanString {
-    /// Creates a new CleanString from a String.
-    /// Returns a tuple of the CleanString and a bool indicating if the string was cleaned.
-    pub fn new(input: String) -> (Self, bool) {
+impl From<String> for CleanString {
+    fn from(input: String) -> Self {
         let value = regex_replace_all!(r"\n+", input.trim(), |_| " ⤶ ");
 
-        let cleaned = regex_replace_all!(
+        Self(regex_replace_all!(
             r"[^\p{Letter}\p{Number}\p{Punctuation}\p{Space_Separator}\p{Math_Symbol}\p{Currency_Symbol}\p{Modifier_Symbol}\u2700-\u27BF]",
             &value,
             |_| ""
-        );
-
-        if cleaned.len() == value.len() {
-            (Self(value.to_string()), false)
-        } else {
-            (Self(cleaned.to_string()), true)
-        }
+        ).to_string())
     }
 }
 
@@ -76,10 +68,9 @@ mod tests {
     #[test]
     fn clean_string_is_identical() {
         let input = "Hello, world!";
-        let (result, cleaned) = CleanString::new(input.to_string());
+        let result = CleanString::from(input.to_string());
 
         assert_eq!(input, *result);
-        assert!(!cleaned);
     }
 
     // TODO: Add more tests

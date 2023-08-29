@@ -25,28 +25,39 @@ pub enum ChatEvent {
     Unknown(String),
 }
 
+const SEPERATOR: &str = "-----------------------------------------------------";
+
 impl From<String> for ChatEvent {
     fn from(value: String) -> Self {
-        if let Ok(event) = Message::try_from(value.as_str()) {
+        // Remove leading and trailing ------
+        let value = if value.starts_with(SEPERATOR) {
+            value
+                .trim_start_matches(SEPERATOR)
+                .trim_end_matches(SEPERATOR)
+        } else {
+            value.as_str()
+        };
+
+        if let Ok(event) = Message::try_from(value) {
             return ChatEvent::Message(event);
         }
 
-        if let Ok(event) = Moderation::try_from(value.as_str()) {
+        if let Ok(event) = Moderation::try_from(value) {
             return ChatEvent::Moderation(event);
         }
 
-        if let Ok(event) = Toggle::try_from(value.as_str()) {
+        if let Ok(event) = Toggle::try_from(value) {
             return ChatEvent::Toggle(event);
         }
 
-        if let Ok(event) = GuildEvent::try_from(value.as_str()) {
+        if let Ok(event) = GuildEvent::try_from(value) {
             return ChatEvent::GuildEvent(event);
         }
 
-        if let Ok(event) = Response::try_from(value.as_str()) {
+        if let Ok(event) = Response::try_from(value) {
             return ChatEvent::CommandResponse(event);
         }
 
-        ChatEvent::Unknown(value)
+        ChatEvent::Unknown(value.to_string())
     }
 }

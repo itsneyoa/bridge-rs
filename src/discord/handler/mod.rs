@@ -98,7 +98,7 @@ impl MessageExt for Message {
                     channel_id,
                     id,
                     &RequestReactionType::Unicode {
-                        name: reaction.emoji,
+                        name: reaction.emoji(),
                     },
                 )
                 .await
@@ -107,4 +107,9 @@ impl MessageExt for Message {
             }
         });
     }
+}
+
+#[inline]
+pub fn avatar_url(ign: &str) -> String {
+    format!("https://mc-heads.net/avatar/{ign}/512")
 }

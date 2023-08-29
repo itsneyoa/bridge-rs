@@ -30,4 +30,10 @@ impl CommandPayload {
 pub enum MinecraftCommand {
     ChatMessage(CleanString),
     Mute(ValidIGN, u8, TimeUnit),
+    Unmute(ValidIGN),
+    Invite(ValidIGN),
+    Kick(ValidIGN, CleanString),
+    Demote(ValidIGN),
+    Promote(ValidIGN),
+    SetRank(ValidIGN, CleanString),
 }

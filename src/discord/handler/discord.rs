@@ -100,21 +100,22 @@ impl DiscordHandler {
             message.channel_id
         );
 
-        let (author, author_cleaned) =
-            CleanString::new(if let Some(reply) = &message.referenced_message {
-                format!(
-                    "{author} ≫ {replying_to}",
-                    author = message.get_author_display_name(),
-                    replying_to = reply.get_author_display_name()
-                )
-            } else {
-                message.get_author_display_name().to_string()
-            });
-        let (content, content_cleaned) =
-            CleanString::new(message.content_clean(&self.cache).to_string());
+        let dirty_author = if let Some(reply) = &message.referenced_message {
+            format!(
+                "{author} ≫ {replying_to}",
+                author = message.get_author_display_name(),
+                replying_to = reply.get_author_display_name()
+            )
+        } else {
+            message.get_author_display_name().to_string()
+        };
+        let dirty_content = message.content_clean(&self.cache).to_string();
+
+        let author = CleanString::from(dirty_author.clone());
+        let content = CleanString::from(dirty_content.clone());
 
         if author.is_empty() || content.is_empty() {
-            message.react(self.http.clone(), reactions::EMPTY_FIELD);
+            message.react(self.http.clone(), reactions::EmptyField);
             return;
         }
 
@@ -131,12 +132,12 @@ impl DiscordHandler {
 
         let mut command = format!("/{prefix} ").as_str() + author.clone() + ": " + content.clone();
 
-        if author_cleaned || content_cleaned {
-            message.react(self.http.clone(), reactions::ILLEGAL_CHARACTERS);
+        if *content != dirty_content || *author != dirty_author {
+            message.react(self.http.clone(), reactions::IllegalCharacters);
         }
 
         if command.len() > 256 {
-            message.react(self.http.clone(), reactions::TOO_LONG);
+            message.react(self.http.clone(), reactions::TooLong);
             command.truncate(256);
         }
 
@@ -168,7 +169,7 @@ impl DiscordHandler {
             .is_err()
         {
             // HACK: Currently, if an error is returned then we timed out
-            message.react(self.http.clone(), reactions::TIMED_OUT);
+            message.react(self.http.clone(), reactions::TimedOut);
         };
     }
 
@@ -231,12 +232,20 @@ impl DiscordHandler {
                     )
                     .await?;
 
-                let payload = match command {
-                    commands::GuildCommand::Help(command) => {
-                        command.run(&interaction, self.feedback.clone()).await
-                    }
-                    commands::GuildCommand::Mute(command) => {
-                        command.run(&interaction, self.feedback.clone()).await
+                let payload = {
+                    use commands::GuildCommand::*;
+
+                    let feedback = self.feedback.clone();
+
+                    match command {
+                        Help(command) => command.run(feedback).await,
+                        Mute(command) => command.run(feedback).await,
+                        Unmute(command) => command.run(feedback).await,
+                        Invite(command) => command.run(feedback).await,
+                        Kick(command) => command.run(feedback).await,
+                        Promote(command) => command.run(feedback).await,
+                        Demote(command) => command.run(feedback).await,
+                        SetRank(command) => command.run(feedback).await,
                     }
                 };
 

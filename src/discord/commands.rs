@@ -1,5 +1,11 @@
+mod demote;
 mod help;
+mod invite;
+mod kick;
 mod mute;
+mod promote;
+mod setrank;
+mod unmute;
 
 use super::colours;
 use crate::{
@@ -13,7 +19,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use twilight_interactions::command::{CommandModel, CommandOption, CreateCommand, CreateOption};
-use twilight_model::{application::interaction::Interaction, channel::message::Embed};
+use twilight_model::channel::message::Embed;
 use twilight_util::builder::embed::EmbedBuilder;
 
 #[derive(CommandModel, CreateCommand)]
@@ -24,6 +30,24 @@ pub enum GuildCommand {
 
     #[command(name = "mute")]
     Mute(mute::MuteCommand),
+
+    #[command(name = "unmute")]
+    Unmute(unmute::UnmuteCommand),
+
+    #[command(name = "invite")]
+    Invite(invite::InviteCommand),
+
+    #[command(name = "kick")]
+    Kick(kick::KickCommand),
+
+    #[command(name = "promote")]
+    Promote(promote::PromoteCommand),
+
+    #[command(name = "demote")]
+    Demote(demote::DemoteCommand),
+
+    #[command(name = "setrank")]
+    SetRank(setrank::SetRankCommand),
 }
 
 pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
@@ -45,11 +69,7 @@ pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
 
 #[async_trait]
 pub trait RunCommand: CommandModel {
-    async fn run(
-        &self,
-        interaction: &Interaction,
-        feedback: Arc<tokio::sync::Mutex<Feedback>>,
-    ) -> Embed;
+    async fn run(self, feedback: Arc<tokio::sync::Mutex<Feedback>>) -> Embed;
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]

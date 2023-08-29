@@ -11,14 +11,12 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
-use twilight_model::{
-    application::interaction::Interaction, channel::message::Embed, guild::Permissions,
-};
+use twilight_model::{channel::message::Embed, guild::Permissions};
 
 #[derive(CommandModel, CreateCommand)]
 #[command(
     name = "mute",
-    desc = "Mutes a player for the specified duration",
+    desc = "Mutes a player for a specified duration",
     default_permissions = "permissions",
     dm_permission = false
 )]
@@ -41,7 +39,7 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for MuteCommand {
-    async fn run(&self, _interaction: &Interaction, feedback: Arc<Mutex<Feedback>>) -> Embed {
+    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Embed {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return embed_from_result(Err(FeedbackError::Custom(format!(
                 "`{ign}` is not a valid IGN",
@@ -56,7 +54,7 @@ impl RunCommand for MuteCommand {
             ))));
         };
 
-        let command = command::MinecraftCommand::Mute(player, duration, self.unit);
+        let command = command::MinecraftCommand::Mute(player.clone(), duration, self.unit);
 
         embed_from_result(
             feedback
@@ -64,22 +62,49 @@ impl RunCommand for MuteCommand {
                 .await
                 .execute(command, |payload| match payload {
                     ChatEvent::Moderation(Moderation::Mute {
-                        member: ref _option @ Some(ref member),
+                        member,
                         length,
                         unit,
                         by,
-                    }) if member.eq_ignore_ascii_case(self.player.trim())
-                        && by == *minecraft::USERNAME.wait().read() =>
+                    }) if by == *minecraft::USERNAME.wait().read()
+                        && player.eq_ignore_ascii_case(match member {
+                            Some(ref member) => member,
+                            None => "everyone",
+                        }) =>
                     {
-                        Some(Ok(format!("{member} has been muted for {length}{unit}")))
+                        Some(Ok(match member {
+                            Some(member) => format!("`{member}` has been muted for {length}{unit}"),
+                            None => format!("`Guild Chat` has been muted for {length}{unit}"),
+                        }))
                     }
 
-                    ChatEvent::CommandResponse(
-                        ref response @ (Response::NotInGuild(ref user)
-                        | Response::PlayerNotFound(ref user)),
-                    ) if user.eq_ignore_ascii_case(self.player.trim()) => {
-                        Some(Err(response.clone().into()))
-                    }
+                    ChatEvent::Unknown(message) => match message.as_str() {
+                        "This player is already muted!" => Some(Err(FeedbackError::Custom(
+                            format!("`{player}` is already muted"),
+                        ))),
+                        "You cannot mute a guild member with a higher guild rank!" => {
+                            Some(Err(Response::NoPermission.into()))
+                        }
+                        "You cannot mute someone for more than one month"
+                        | "You cannot mute someone for less than a minute" => {
+                            Some(Err(FeedbackError::Custom("Invalid duration".to_string())))
+                        }
+                        "Invalid time format! Try 7d, 1d, 6h, 1h" => Some(Err(
+                            FeedbackError::Custom("Invalid time format".to_string()),
+                        )),
+                        _ => None,
+                    },
+
+                    ChatEvent::CommandResponse(response) => match response {
+                        Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                            if player.eq_ignore_ascii_case(user) =>
+                        {
+                            Some(Err(response.into()))
+                        }
+                        Response::NoPermission => Some(Err(response.into())),
+                        _ => None,
+                    },
+
                     _ => None,
                 })
                 .await,

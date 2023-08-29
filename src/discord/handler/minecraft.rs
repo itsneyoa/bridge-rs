@@ -1,3 +1,4 @@
+use super::avatar_url;
 use crate::{
     bridge::Chat,
     discord::Discord,
@@ -52,7 +53,7 @@ impl MinecraftHandler {
                     )
                     .username(&author)
                     .expect("Invalid webhook username")
-                    .avatar_url(&format!("https://mc-heads.net/avatar/{author}/512"))
+                    .avatar_url(&avatar_url(&author))
                     .content(&content)
                     .expect("Invalid webhook content")
                     .allowed_mentions(Some(&AllowedMentions {
@@ -89,7 +90,7 @@ impl MinecraftHandler {
                     )
                     .username(&member)
                     .expect("Invalid webhook username")
-                    .avatar_url(&format!("https://mc-heads.net/avatar/{member}/512"))
+                    .avatar_url(&avatar_url(&member))
                     .embeds(&[embed])
                     .expect("Invalid webhook embeds")
                     .allowed_mentions(Some(&AllowedMentions {
@@ -106,11 +107,14 @@ impl MinecraftHandler {
             ChatEvent::GuildEvent(update) => {
                 use crate::payloads::events::GuildEvent::*;
 
+                let avatar_source =
+                    |member: &str| ImageSource::url(avatar_url(member)).expect("Invalid URL");
+
                 let embed = match update {
                     Join(member) => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Joined!")
-                                .icon_url(self.avatar_url(&member))
+                                .icon_url(avatar_source(&member))
                                 .build(),
                         )
                         .description(format!("`{member}` joined the guild"))
@@ -119,7 +123,7 @@ impl MinecraftHandler {
                     Leave(member) => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Left")
-                                .icon_url(self.avatar_url(&member))
+                                .icon_url(avatar_source(&member))
                                 .build(),
                         )
                         .description(format!("`{member}` left the guild"))
@@ -128,7 +132,7 @@ impl MinecraftHandler {
                     Kick { member, by } => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Kicked")
-                                .icon_url(self.avatar_url(&member))
+                                .icon_url(avatar_source(&member))
                                 .build(),
                         )
                         .description(format!("`{member}` was kicked by `{by}`"))
@@ -223,10 +227,6 @@ impl MinecraftHandler {
 
             ChatEvent::CommandResponse(_) | ChatEvent::Unknown(_) => {}
         }
-    }
-
-    fn avatar_url(&self, ign: &str) -> ImageSource {
-        ImageSource::url(format!("https://mc-heads.net/avatar/{ign}/512")).expect("Invalid URL")
     }
 
     async fn send_embed(&self, channel: Id<ChannelMarker>, embed: Embed) {
