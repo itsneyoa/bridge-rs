@@ -1,4 +1,4 @@
-use super::{embed_from_result, Feedback, FeedbackError, RunCommand};
+use super::{CommandResult, Feedback, FeedbackError, RunCommand};
 use crate::{
     minecraft,
     payloads::{
@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
-use twilight_model::{channel::message::Embed, guild::Permissions};
+use twilight_model::guild::Permissions;
 
 #[derive(CommandModel, CreateCommand)]
 #[command(
@@ -32,54 +32,51 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for UnmuteCommand {
-    async fn run(mut self, feedback: Arc<Mutex<Feedback>>) -> Embed {
+    type Output = CommandResult;
+
+    async fn run(mut self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return embed_from_result(Err(FeedbackError::Custom(format!(
+            return Err(FeedbackError::Custom(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
-            ))));
+            )));
         };
 
         let command = command::MinecraftCommand::Unmute(player.clone());
 
-        embed_from_result(
-            feedback
-                .lock()
-                .await
-                .execute(command, |payload| match payload {
-                    ChatEvent::Moderation(Moderation::Unmute { member, by })
-                        if by == *minecraft::USERNAME.wait().read()
-                            && player.eq_ignore_ascii_case(match member {
-                                Some(ref member) => member,
-                                None => "everyone",
-                            }) =>
+        feedback
+            .lock()
+            .await
+            .execute(command, |payload| match payload {
+                ChatEvent::Moderation(Moderation::Unmute { member, by })
+                    if by == *minecraft::USERNAME.wait().read()
+                        && player.eq_ignore_ascii_case(match member {
+                            Some(ref member) => member,
+                            None => "everyone",
+                        }) =>
+                {
+                    Some(Ok(match member {
+                        Some(member) => format!("`{member}` has been unmuted"),
+                        None => format!("`Guild Chat` has been unmuted"),
+                    }))
+                }
+
+                ChatEvent::Unknown(message) if message == "This player is not muted!" => Some(Err(
+                    FeedbackError::Custom(format!("`{player}` is not muted", player = player)),
+                )),
+
+                ChatEvent::CommandResponse(response) => match response {
+                    Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                        if player.eq_ignore_ascii_case(user) =>
                     {
-                        Some(Ok(match member {
-                            Some(member) => format!("`{member}` has been unmuted"),
-                            None => format!("`Guild Chat` has been unmuted"),
-                        }))
+                        Some(Err(response.into()))
                     }
-
-                    ChatEvent::Unknown(message) if message == "This player is not muted!" => {
-                        Some(Err(FeedbackError::Custom(format!(
-                            "`{player}` is not muted",
-                            player = player
-                        ))))
-                    }
-
-                    ChatEvent::CommandResponse(response) => match response {
-                        Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                            if player.eq_ignore_ascii_case(user) =>
-                        {
-                            Some(Err(response.into()))
-                        }
-                        Response::NoPermission => Some(Err(response.into())),
-                        _ => None,
-                    },
-
+                    Response::NoPermission => Some(Err(response.into())),
                     _ => None,
-                })
-                .await,
-        )
+                },
+
+                _ => None,
+            })
+            .await
     }
 }

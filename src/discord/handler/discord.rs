@@ -4,7 +4,7 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{self, Feedback, RunCommand},
+        commands::{self, EmbedWrapper, Feedback, RunCommand},
         reactions, Discord,
     },
     minecraft,
@@ -232,26 +232,26 @@ impl DiscordHandler {
                     )
                     .await?;
 
-                let payload = {
+                let payload: EmbedWrapper = {
                     use commands::GuildCommand::*;
 
                     let feedback = self.feedback.clone();
 
                     match command {
-                        Help(command) => command.run(feedback).await,
-                        Mute(command) => command.run(feedback).await,
-                        Unmute(command) => command.run(feedback).await,
-                        Invite(command) => command.run(feedback).await,
-                        Kick(command) => command.run(feedback).await,
-                        Promote(command) => command.run(feedback).await,
-                        Demote(command) => command.run(feedback).await,
-                        SetRank(command) => command.run(feedback).await,
+                        Help(command) => command.run(feedback).await.into(),
+                        Mute(command) => command.run(feedback).await.into(),
+                        Unmute(command) => command.run(feedback).await.into(),
+                        Invite(command) => command.run(feedback).await.into(),
+                        Kick(command) => command.run(feedback).await.into(),
+                        Promote(command) => command.run(feedback).await.into(),
+                        Demote(command) => command.run(feedback).await.into(),
+                        SetRank(command) => command.run(feedback).await.into(),
                     }
                 };
 
                 client
                     .update_response(&interaction.token)
-                    .embeds(Some(&[payload]))
+                    .embeds(Some(&[payload.into()]))
                     .expect("Invalid embeds in response")
                     .await
                     .map(|_| ())

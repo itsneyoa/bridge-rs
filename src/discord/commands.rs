@@ -67,9 +67,43 @@ pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
         .map(|_| ())?)
 }
 
+type CommandResult = Result<String, FeedbackError>;
+
+pub struct EmbedWrapper(Embed);
+
+impl From<EmbedWrapper> for Embed {
+    fn from(value: EmbedWrapper) -> Self {
+        value.0
+    }
+}
+
+impl From<Embed> for EmbedWrapper {
+    fn from(value: Embed) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CommandResult> for EmbedWrapper {
+    fn from(value: Result<String, FeedbackError>) -> Self {
+        let (description, colour) = match value {
+            Ok(description) => (description, colours::GREEN),
+            Err(description) => (description.to_string(), colours::RED),
+        };
+
+        let embed = EmbedBuilder::new()
+            .description(description)
+            .color(colour)
+            .build();
+
+        Self(embed)
+    }
+}
+
 #[async_trait]
 pub trait RunCommand: CommandModel {
-    async fn run(self, feedback: Arc<tokio::sync::Mutex<Feedback>>) -> Embed;
+    type Output: Into<EmbedWrapper>;
+
+    async fn run(self, feedback: Arc<tokio::sync::Mutex<Feedback>>) -> Self::Output;
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]
@@ -154,16 +188,4 @@ impl ToString for FeedbackError {
             FeedbackError::Custom(message) => message.to_string(),
         }
     }
-}
-
-pub fn embed_from_result(result: Result<String, FeedbackError>) -> Embed {
-    let (description, colour) = match result {
-        Ok(description) => (description, colours::GREEN),
-        Err(description) => (description.to_string(), colours::RED),
-    };
-
-    EmbedBuilder::new()
-        .description(description)
-        .color(colour)
-        .build()
 }

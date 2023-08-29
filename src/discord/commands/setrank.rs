@@ -1,4 +1,4 @@
-use super::{embed_from_result, Feedback, FeedbackError, RunCommand};
+use super::{CommandResult, Feedback, FeedbackError, RunCommand};
 use crate::{
     payloads::{
         command,
@@ -11,7 +11,7 @@ use lazy_regex::regex_captures;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
-use twilight_model::{channel::message::Embed, guild::Permissions};
+use twilight_model::guild::Permissions;
 
 #[derive(CommandModel, CreateCommand)]
 #[command(
@@ -36,82 +36,81 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for SetRankCommand {
-    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Embed {
+    type Output = CommandResult;
+
+    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return embed_from_result(Err(FeedbackError::Custom(format!(
+            return Err(FeedbackError::Custom(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
-            ))));
+            )));
         };
 
         let Ok(rank) = CleanString::try_from(self.rank.clone()) else {
-            return embed_from_result(Err(FeedbackError::Custom(format!(
+            return Err(FeedbackError::Custom(format!(
                 "`{rank}` is not a valid guild rank",
                 rank = self.rank
-            ))));
+            )));
         };
 
         let command = command::MinecraftCommand::SetRank(player.clone(), rank.clone());
 
-        embed_from_result(
-            feedback
-                .lock()
-                .await
-                .execute(command, |payload| match payload {
-                    ChatEvent::GuildEvent(GuildEvent::Promotion {
-                        ref member,
-                        old_rank,
-                        new_rank,
-                    }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
-                        "`{member}` has been promoted from `{old_rank}` to `{new_rank}`"
-                    ))),
+        feedback
+            .lock()
+            .await
+            .execute(command, |payload| match payload {
+                ChatEvent::GuildEvent(GuildEvent::Promotion {
+                    ref member,
+                    old_rank,
+                    new_rank,
+                }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
+                    "`{member}` has been promoted from `{old_rank}` to `{new_rank}`"
+                ))),
 
-                    ChatEvent::GuildEvent(GuildEvent::Demotion {
-                        ref member,
-                        old_rank,
-                        new_rank,
-                    }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
-                        "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
-                    ))),
+                ChatEvent::GuildEvent(GuildEvent::Demotion {
+                    ref member,
+                    old_rank,
+                    new_rank,
+                }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
+                    "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
+                ))),
 
-                    ChatEvent::Unknown(ref message) => {
-                        if let Some((_, rank)) = regex_captures!(
-                            r#"I couldn't find a rank by the name of '(.+)'!"#,
-                            message
-                        ) {
-                            return Some(Err(FeedbackError::Custom(format!(
-                                "Couldn't find rank `{rank}`"
-                            ))));
-                        }
-
-                        if message == "They already have that rank!" {
-                            return Some(Err(FeedbackError::Custom(format!(
-                                "`{player}` already has rank `{rank}`"
-                            ))));
-                        }
-
-                        if message == "You can only demote up to your own rank!"
-                            || message == "You can only promote up to your own rank!"
-                        {
-                            return Some(Err(Response::NoPermission.into()));
-                        }
-
-                        None
+                ChatEvent::Unknown(ref message) => {
+                    if let Some((_, rank)) =
+                        regex_captures!(r#"I couldn't find a rank by the name of '(.+)'!"#, message)
+                    {
+                        return Some(Err(FeedbackError::Custom(format!(
+                            "Couldn't find rank `{rank}`"
+                        ))));
                     }
 
-                    ChatEvent::CommandResponse(response) => match response {
-                        Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                            if player.eq_ignore_ascii_case(user) =>
-                        {
-                            Some(Err(response.into()))
-                        }
-                        Response::NoPermission => Some(Err(response.into())),
-                        _ => None,
-                    },
+                    if message == "They already have that rank!" {
+                        return Some(Err(FeedbackError::Custom(format!(
+                            "`{player}` already has rank `{rank}`"
+                        ))));
+                    }
 
+                    if message == "You can only demote up to your own rank!"
+                        || message == "You can only promote up to your own rank!"
+                    {
+                        return Some(Err(Response::NoPermission.into()));
+                    }
+
+                    None
+                }
+
+                ChatEvent::CommandResponse(response) => match response {
+                    Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                        if player.eq_ignore_ascii_case(user) =>
+                    {
+                        Some(Err(response.into()))
+                    }
+                    Response::NoPermission => Some(Err(response.into())),
                     _ => None,
-                })
-                .await,
-        )
+                },
+
+                _ => None,
+            })
+            .await
     }
 }

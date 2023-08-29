@@ -30,7 +30,9 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for HelpCommand {
-    async fn run(self, _: Arc<Mutex<Feedback>>) -> Embed {
+    type Output = Embed;
+
+    async fn run(self, _: Arc<Mutex<Feedback>>) -> Self::Output {
         EmbedBuilder::new()
             .title("Bridge Help")
             .field(EmbedField {

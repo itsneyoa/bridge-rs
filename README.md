@@ -20,7 +20,7 @@ _To do_
 -   [x] Online/Offline messages
 -   [x] Connected/Disconnected messages
 -   [x] Minecraft support for discord message replies
--   [ ] Discord slash commands
+-   [x] Discord slash commands
 -   [ ] Custom console logger
 -   [ ] Optional discord logger
 -   [ ] Emoji feedback on discord outgoing messages
