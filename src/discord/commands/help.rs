@@ -1,18 +1,12 @@
+use super::{CommandResponse, RunCommand};
 use crate::{
     config,
     discord::{colours, handler::avatar_url, reactions::Reaction},
+    payloads::{command::MinecraftCommand, events::ChatEvent},
 };
-
-use super::{Feedback, RunCommand};
-use async_trait::async_trait;
-use std::sync::Arc;
 use strum::IntoEnumIterator;
-use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
-use twilight_model::{
-    channel::message::{embed::EmbedField, Embed},
-    guild::Permissions,
-};
+use twilight_model::{channel::message::embed::EmbedField, guild::Permissions};
 use twilight_util::builder::embed::{EmbedBuilder, EmbedFooterBuilder, ImageSource};
 
 #[derive(CommandModel, CreateCommand)]
@@ -28,12 +22,9 @@ fn permissions() -> Permissions {
     Permissions::empty()
 }
 
-#[async_trait]
 impl RunCommand for HelpCommand {
-    type Output = Embed;
-
-    async fn run(self, _: Arc<Mutex<Feedback>>) -> Self::Output {
-        EmbedBuilder::new()
+    fn get_command(self) -> Result<MinecraftCommand, CommandResponse> {
+        let help_embed = EmbedBuilder::new()
             .title("Bridge Help")
             .field(EmbedField {
                 name: "Reactions".to_string(),
@@ -59,6 +50,14 @@ impl RunCommand for HelpCommand {
                     .icon_url(ImageSource::url(avatar_url("neyoa")).expect("Invalid image url")),
             )
             .color(colours::GREEN)
-            .build()
+            .build();
+
+        Err(CommandResponse::Embed(Box::new(help_embed)))
+    }
+
+    fn check_event(_: &MinecraftCommand, _: ChatEvent) -> Option<CommandResponse> {
+        unreachable!(
+            "Help command should always return Err(CommandResponse::Embed(embed)) so `check_event` is never called"
+        )
     }
 }

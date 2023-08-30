@@ -1,19 +1,16 @@
-use super::{CommandResponse, Feedback, RunCommand};
+use super::{CommandResponse, RunCommand};
 use crate::{
     payloads::{
-        command,
+        command::MinecraftCommand,
         events::{ChatEvent, GuildEvent, Response},
     },
     sanitizer::ValidIGN,
 };
-use async_trait::async_trait;
 use lazy_regex::regex_captures;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::guild::Permissions;
 
-#[derive(CommandModel, CreateCommand, Debug)]
+#[derive(CommandModel, CreateCommand)]
 #[command(
     name = "demote",
     desc = "Demotes a player by one guild rank",
@@ -30,67 +27,69 @@ fn permissions() -> Permissions {
     Permissions::MANAGE_ROLES
 }
 
-#[async_trait]
 impl RunCommand for DemoteCommand {
-    type Output = CommandResponse;
-
-    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
-        use CommandResponse::*;
-
+    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
+            return Err(CommandResponse::Failure(format!(
+                "`{ign}` is not a valid IGN",
+                ign = self.player
+            )));
         };
 
-        let command = command::MinecraftCommand::Demote(player.clone());
+        Ok(MinecraftCommand::Demote(player))
+    }
 
-        feedback
-            .lock()
-            .await
-            .execute(command, |payload| match payload {
-                ChatEvent::GuildEvent(GuildEvent::Demotion {
-                    ref member,
-                    old_rank,
-                    new_rank,
-                }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
-                    "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
-                ))),
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
+        use CommandResponse::*;
 
-                ChatEvent::Unknown(ref message) => {
-                    if let Some((_, user)) = regex_captures!(
-                        r#"^(?:\\[.+?\\] )?(\w+) is already the lowest rank you've created!$"#,
-                        message
-                    ) {
-                        if player.eq_ignore_ascii_case(user) {
-                            return Some(Failure(format!("`{user}` is already the lowest rank")));
-                        }
+        let MinecraftCommand::Demote(player) = command else {
+            unreachable!("Expected Minecraft::Demote, got {command:?}");
+        };
+
+        match event {
+            ChatEvent::GuildEvent(GuildEvent::Demotion {
+                ref member,
+                old_rank,
+                new_rank,
+            }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
+                "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
+            ))),
+
+            ChatEvent::Unknown(ref message) => {
+                if let Some((_, user)) = regex_captures!(
+                    r#"^(?:\\[.+?\\] )?(\w+) is already the lowest rank you've created!$"#,
+                    message
+                ) {
+                    if player.eq_ignore_ascii_case(user) {
+                        return Some(Failure(format!("`{user}` is already the lowest rank")));
                     }
-
-                    if message == "You can only demote up to your own rank!"
-                        || regex_captures!(
-                            r#"(?:\[.+?\] )?(\w+) is the guild master so can't be demoted!"#,
-                            message
-                        )
-                        .is_some_and(|(_, user)| player.eq_ignore_ascii_case(user))
-                    {
-                        return Some(Failure(Response::NoPermission.to_string()));
-                    }
-
-                    None
                 }
 
-                ChatEvent::CommandResponse(response) => match response {
-                    Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                        if player.eq_ignore_ascii_case(user) =>
-                    {
-                        Some(Failure(response.to_string()))
-                    }
-                    Response::NoPermission => Some(Failure(response.to_string())),
-                    _ => None,
-                },
+                if message == "You can only demote up to your own rank!"
+                    || regex_captures!(
+                        r#"(?:\[.+?\] )?(\w+) is the guild master so can't be demoted!"#,
+                        message
+                    )
+                    .is_some_and(|(_, user)| player.eq_ignore_ascii_case(user))
+                {
+                    return Some(Failure(Response::NoPermission.to_string()));
+                }
 
+                None
+            }
+
+            ChatEvent::CommandResponse(response) => match response {
+                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                    if player.eq_ignore_ascii_case(user) =>
+                {
+                    Some(Failure(response.to_string()))
+                }
+                Response::NoPermission => Some(Failure(response.to_string())),
                 _ => None,
-            })
-            .await
+            },
+
+            _ => None,
+        }
     }
 }
 
@@ -100,15 +99,14 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    #[tokio::test]
-    async fn success() {
+    #[test]
+    fn success() {
         let response = test_command(
             DemoteCommand {
                 player: "neyoa".to_string(),
             },
             "[MVP+] neyoa was demoted from Expert to Advanced",
-        )
-        .await;
+        );
 
         assert!(response.is_success())
     }
@@ -120,8 +118,7 @@ mod tests {
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is not in your guild!" ; "Target not in guild")]
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Target not found")]
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You must be the Guild Master to use that command!" ; "No permission")]
-    #[tokio::test]
-    async fn failures(command: DemoteCommand, message: &'static str) {
-        assert!(dbg!(test_command(command, message).await.is_failure()));
+    fn failures(command: DemoteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }

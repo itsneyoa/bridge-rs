@@ -15,8 +15,7 @@ use crate::{
     },
     Result,
 };
-use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use strum::EnumIs;
 use tokio::sync::{mpsc, oneshot};
 use twilight_interactions::command::{CommandModel, CommandOption, CreateCommand, CreateOption};
@@ -51,6 +50,42 @@ pub enum GuildCommand {
     SetRank(setrank::SetRankCommand),
 }
 
+type EventChecker = fn(&MinecraftCommand, ChatEvent) -> Option<CommandResponse>;
+
+impl GuildCommand {
+    pub fn get_command_or_response(
+        self,
+    ) -> Result<(MinecraftCommand, EventChecker), CommandResponse> {
+        let checker = self.get_event_checker();
+
+        let command = match self {
+            GuildCommand::Help(command) => command.get_command(),
+            GuildCommand::Mute(command) => command.get_command(),
+            GuildCommand::Unmute(command) => command.get_command(),
+            GuildCommand::Invite(command) => command.get_command(),
+            GuildCommand::Kick(command) => command.get_command(),
+            GuildCommand::Promote(command) => command.get_command(),
+            GuildCommand::Demote(command) => command.get_command(),
+            GuildCommand::SetRank(command) => command.get_command(),
+        };
+
+        command.map(|command| (command, checker))
+    }
+
+    fn get_event_checker(&self) -> EventChecker {
+        match self {
+            GuildCommand::Help(_) => help::HelpCommand::check_event,
+            GuildCommand::Mute(_) => mute::MuteCommand::check_event,
+            GuildCommand::Unmute(_) => unmute::UnmuteCommand::check_event,
+            GuildCommand::Invite(_) => invite::InviteCommand::check_event,
+            GuildCommand::Kick(_) => kick::KickCommand::check_event,
+            GuildCommand::Promote(_) => promote::PromoteCommand::check_event,
+            GuildCommand::Demote(_) => demote::DemoteCommand::check_event,
+            GuildCommand::SetRank(_) => setrank::SetRankCommand::check_event,
+        }
+    }
+}
+
 pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
     let application_id = {
         let response = http.current_user_application().await?;
@@ -73,6 +108,7 @@ pub enum CommandResponse {
     Success(String),
     Failure(String),
     Timeout,
+    Embed(Box<Embed>),
 }
 
 impl From<CommandResponse> for Embed {
@@ -84,6 +120,7 @@ impl From<CommandResponse> for Embed {
                 format!("Couldn't find any command response after {TIMEOUT_DELAY:?}"),
                 colours::RED,
             ),
+            CommandResponse::Embed(embed) => return *embed,
         };
 
         EmbedBuilder::new()
@@ -93,11 +130,10 @@ impl From<CommandResponse> for Embed {
     }
 }
 
-#[async_trait]
 pub trait RunCommand: CommandModel {
-    type Output: Into<Embed>;
+    fn get_command(self) -> Result<MinecraftCommand, CommandResponse>;
 
-    async fn run(self, feedback: Arc<tokio::sync::Mutex<Feedback>>) -> Self::Output;
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse>;
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]
@@ -130,12 +166,12 @@ pub struct Feedback {
 impl Feedback {
     pub async fn execute<F>(&mut self, command: MinecraftCommand, f: F) -> CommandResponse
     where
-        F: Fn(ChatEvent) -> Option<CommandResponse>,
+        F: Fn(&MinecraftCommand, ChatEvent) -> Option<CommandResponse>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
         self.tx
-            .send(CommandPayload::new(command, verify_tx))
+            .send(CommandPayload::new(command.clone(), verify_tx))
             .expect("Minecraft payload receiver was dropped");
 
         verify_rx
@@ -146,7 +182,7 @@ impl Feedback {
             biased;
             result = async {
                 while let Ok(payload) = self.rx.activate_cloned().recv().await {
-                    if let Some(result) = f(payload) {
+                    if let Some(result) = f(&command,payload) {
                         return result;
                     }
                 }
@@ -164,44 +200,13 @@ impl Feedback {
 #[cfg(test)]
 mod testing {
     use super::*;
-    use futures::future::pending;
-    use tokio::sync::{mpsc, Mutex};
 
-    pub async fn test_command<C: RunCommand>(command: C, message: &'static str) -> C::Output {
-        let (command_tx, mut command_rx) = mpsc::unbounded_channel::<CommandPayload>();
-
-        let acknowledge_commands = async move {
-            while let Some(cmd) = command_rx.recv().await {
-                cmd.notify
-                    .lock()
-                    .take()
-                    .expect("No command sent acknowledgement channel")
-                    .send(())
-                    .expect("Command sent receiving acknowledgement channel was dropped");
-            }
+    pub fn test_command<C: RunCommand>(command: C, message: &'static str) -> CommandResponse {
+        let command = match command.get_command() {
+            Ok(command) => command,
+            Err(response) => return response,
         };
 
-        let (chat_tx, chat_rx) = async_broadcast::broadcast::<ChatEvent>(1);
-
-        let feedback = Feedback {
-            tx: command_tx,
-            rx: chat_rx.deactivate(),
-        };
-
-        let send_message = async move {
-            chat_tx
-                .broadcast(ChatEvent::from(message))
-                .await
-                .expect("Command sending channel closed");
-
-            pending::<CommandResponse>().await
-        };
-
-        tokio::select! {
-            biased;
-            feedback = command.run(Arc::new(Mutex::new(feedback))) => feedback,
-            _ = send_message => unreachable!("send_message async blocks forever"),
-            _ = acknowledge_commands => unreachable!("command_rx closed")
-        }
+        C::check_event(&command, ChatEvent::from(message)).expect("No response was returned")
     }
 }

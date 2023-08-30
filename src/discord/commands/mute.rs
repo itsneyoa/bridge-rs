@@ -1,15 +1,12 @@
-use super::{CommandResponse, Feedback, RunCommand, TimeUnit};
+use super::{CommandResponse, RunCommand, TimeUnit};
 use crate::{
     minecraft,
     payloads::{
-        command,
+        command::MinecraftCommand,
         events::{ChatEvent, Moderation, Response},
     },
     sanitizer::ValidIGN,
 };
-use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::guild::Permissions;
 
@@ -37,75 +34,77 @@ fn permissions() -> Permissions {
     Permissions::MUTE_MEMBERS | Permissions::MODERATE_MEMBERS
 }
 
-#[async_trait]
 impl RunCommand for MuteCommand {
-    type Output = CommandResponse;
-
-    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
-        use CommandResponse::*;
-
+    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
+            return Err(CommandResponse::Failure(format!(
+                "`{ign}` is not a valid IGN",
+                ign = self.player
+            )));
         };
 
         let Ok(duration) = u8::try_from(self.duration) else {
-            return Failure(format!(
+            return Err(CommandResponse::Failure(format!(
                 "`{duration}` is not a valid mute duration",
                 duration = self.duration
-            ));
+            )));
         };
 
-        let command = command::MinecraftCommand::Mute(player.clone(), duration, self.unit);
+        Ok(MinecraftCommand::Mute(player.clone(), duration, self.unit))
+    }
 
-        feedback
-            .lock()
-            .await
-            .execute(command, |payload| match payload {
-                ChatEvent::Moderation(Moderation::Mute {
-                    member,
-                    length,
-                    unit,
-                    by,
-                }) if by == *minecraft::USERNAME.wait().read()
-                    && player.eq_ignore_ascii_case(match member {
-                        Some(ref member) => member,
-                        None => "everyone",
-                    }) =>
-                {
-                    Some(Success(match member {
-                        Some(member) => format!("`{member}` has been muted for {length}{unit}"),
-                        None => format!("`Guild Chat` has been muted for {length}{unit}"),
-                    }))
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
+        use CommandResponse::*;
+
+        let MinecraftCommand::Mute(player, _, _) = command else {
+            unreachable!("Expected Minecraft::Mute, got {command:?}");
+        };
+
+        match event {
+            ChatEvent::Moderation(Moderation::Mute {
+                member,
+                length,
+                unit,
+                by,
+            }) if by == *minecraft::USERNAME.wait().read()
+                && player.eq_ignore_ascii_case(match member {
+                    Some(ref member) => member,
+                    None => "everyone",
+                }) =>
+            {
+                Some(Success(match member {
+                    Some(member) => format!("`{member}` has been muted for {length}{unit}"),
+                    None => format!("`Guild Chat` has been muted for {length}{unit}"),
+                }))
+            }
+
+            ChatEvent::Unknown(message) => match message.as_str() {
+                "This player is already muted!" => {
+                    Some(Failure(format!("`{player}` is already muted")))
                 }
-
-                ChatEvent::Unknown(message) => match message.as_str() {
-                    "This player is already muted!" => {
-                        Some(Failure(format!("`{player}` is already muted")))
-                    }
-                    "You cannot mute a guild member with a higher guild rank!" => {
-                        Some(Failure(Response::NoPermission.to_string()))
-                    }
-                    "You cannot mute someone for more than one month"
-                    | "You cannot mute someone for less than a minute" => {
-                        Some(Failure("Invalid duration".to_string()))
-                    }
-                    "Invalid time format! Try 7d, 1d, 6h, 1h" => {
-                        Some(Failure("Invalid time format".to_string()))
-                    }
-                    _ => None,
-                },
-
-                // ChatEvent::CommandResponse(response) => match response {
-                //     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                //         if player.eq_ignore_ascii_case(user) =>
-                //     {
-                //         Some(Failure(response.into()))
-                //     }
-                //     Response::NoPermission => Some(Failure(response.into())),
-                //     _ => None,
-                // },
+                "You cannot mute a guild member with a higher guild rank!" => {
+                    Some(Failure(Response::NoPermission.to_string()))
+                }
+                "You cannot mute someone for more than one month"
+                | "You cannot mute someone for less than a minute" => {
+                    Some(Failure("Invalid duration".to_string()))
+                }
+                "Invalid time format! Try 7d, 1d, 6h, 1h" => {
+                    Some(Failure("Invalid time format".to_string()))
+                }
                 _ => None,
-            })
-            .await
+            },
+
+            ChatEvent::CommandResponse(response) => match response {
+                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                    if player.eq_ignore_ascii_case(user) =>
+                {
+                    Some(Failure(response.to_string()))
+                }
+                Response::NoPermission => Some(Failure(response.to_string())),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }

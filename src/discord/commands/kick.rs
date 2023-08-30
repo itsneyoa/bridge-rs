@@ -1,15 +1,12 @@
-use super::{CommandResponse, Feedback, RunCommand};
+use super::{CommandResponse, RunCommand};
 use crate::{
     minecraft,
     payloads::{
-        command,
+        command::MinecraftCommand,
         events::{ChatEvent, GuildEvent, Response},
     },
     sanitizer::{CleanString, ValidIGN},
 };
-use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::guild::Permissions;
 
@@ -34,15 +31,13 @@ fn permissions() -> Permissions {
     Permissions::KICK_MEMBERS
 }
 
-#[async_trait]
 impl RunCommand for KickCommand {
-    type Output = CommandResponse;
-
-    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> CommandResponse {
-        use CommandResponse::*;
-
+    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
+            return Err(CommandResponse::Failure(format!(
+                "`{ign}` is not a valid IGN",
+                ign = self.player
+            )));
         };
 
         let reason = if let Some(reason) = self.reason {
@@ -58,32 +53,36 @@ impl RunCommand for KickCommand {
         }
         .unwrap_or_else(|| CleanString::from("No reason provided".to_string()));
 
-        let command = command::MinecraftCommand::Kick(player.clone(), reason);
+        Ok(MinecraftCommand::Kick(player.clone(), reason))
+    }
 
-        feedback
-            .lock()
-            .await
-            .execute(command, |payload| match payload {
-                ChatEvent::GuildEvent(GuildEvent::Kick { ref member, by })
-                    if player.eq_ignore_ascii_case(member)
-                        && by == *minecraft::USERNAME.wait().read() =>
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
+        use CommandResponse::*;
+
+        let MinecraftCommand::Kick(player, _) = command else {
+            unreachable!("Expected Minecraft::Kick, got {command:?}");
+        };
+
+        match event {
+            ChatEvent::GuildEvent(GuildEvent::Kick { ref member, by })
+                if player.eq_ignore_ascii_case(member)
+                    && by == *minecraft::USERNAME.wait().read() =>
+            {
+                Some(Success(format!(
+                    "`{member}` has been kicked from the guild"
+                )))
+            }
+
+            ChatEvent::CommandResponse(response) => match response {
+                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                    if player.eq_ignore_ascii_case(user) =>
                 {
-                    Some(Success(format!(
-                        "`{member}` has been kicked from the guild"
-                    )))
+                    Some(Failure(response.to_string()))
                 }
-
-                ChatEvent::CommandResponse(response) => match response {
-                    Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                        if player.eq_ignore_ascii_case(user) =>
-                    {
-                        Some(Failure(response.to_string()))
-                    }
-                    Response::NoPermission => Some(Failure(response.to_string())),
-                    _ => None,
-                },
+                Response::NoPermission => Some(Failure(response.to_string())),
                 _ => None,
-            })
-            .await
+            },
+            _ => None,
+        }
     }
 }

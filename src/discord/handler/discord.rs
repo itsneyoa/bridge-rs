@@ -4,7 +4,7 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{self, CommandResponse, Feedback, RunCommand},
+        commands::{CommandResponse, Feedback, GuildCommand},
         reactions, Discord,
     },
     minecraft,
@@ -147,7 +147,7 @@ impl DiscordHandler {
             .feedback
             .lock()
             .await
-            .execute(command, |payload| match payload {
+            .execute(command, |_, event| match event {
                 ChatEvent::Message(Message {
                     author: ref msg_author,
                     content: ref msg_content,
@@ -215,9 +215,9 @@ impl DiscordHandler {
         let client = self.http.interaction(interaction.application_id);
 
         match data.name.as_str() {
-            commands::GuildCommand::NAME => {
-                let command = commands::GuildCommand::from_interaction(data.into())
-                    .expect("Failed to parse command");
+            GuildCommand::NAME => {
+                let command =
+                    GuildCommand::from_interaction(data.into()).expect("Failed to parse command");
 
                 // Defer our response
                 client
@@ -231,26 +231,21 @@ impl DiscordHandler {
                     )
                     .await?;
 
-                let payload = {
-                    use commands::GuildCommand::*;
+                let embed = match command.get_command_or_response() {
+                    Ok((command, matcher)) => self
+                        .feedback
+                        .lock()
+                        .await
+                        .execute(command, matcher)
+                        .await
+                        .into(),
 
-                    let feedback = self.feedback.clone();
-
-                    match command {
-                        Help(command) => command.run(feedback).await,
-                        Mute(command) => command.run(feedback).await.into(),
-                        Unmute(command) => command.run(feedback).await.into(),
-                        Invite(command) => command.run(feedback).await.into(),
-                        Kick(command) => command.run(feedback).await.into(),
-                        Promote(command) => command.run(feedback).await.into(),
-                        Demote(command) => command.run(feedback).await.into(),
-                        SetRank(command) => command.run(feedback).await.into(),
-                    }
+                    Err(response) => response.into(),
                 };
 
                 client
                     .update_response(&interaction.token)
-                    .embeds(Some(&[payload]))
+                    .embeds(Some(&[embed]))
                     .expect("Invalid embeds in response")
                     .await
                     .map(|_| ())
