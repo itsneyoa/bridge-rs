@@ -37,7 +37,7 @@ impl RunCommand for InviteCommand {
             )));
         };
 
-        Ok(MinecraftCommand::Invite(player.clone()))
+        Ok(MinecraftCommand::Invite(player))
     }
 
     fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
@@ -59,7 +59,7 @@ impl RunCommand for InviteCommand {
                 }
 
                 if let Some((_, user)) = regex_captures!(
-                    r#"&You sent an offline invite to (?:\[.+?\] )?(\w+)! They will have 5 minutes to accept once they come online!$"#,
+                    r#"^You sent an offline invite to (?:\[.+?\] )?(\w+)! They will have 5 minutes to accept once they come online!$"#,
                     &message
                 ) {
                     if player.eq_ignore_ascii_case(user) {
@@ -106,6 +106,10 @@ impl RunCommand for InviteCommand {
                     return Some(Failure("`{player}` has guild invites disabled".to_string()));
                 }
 
+                if message == "You do not have permission to invite players!" {
+                    return Some(Failure(Response::NoPermission.to_string()));
+                }
+
                 None
             }
 
@@ -113,11 +117,36 @@ impl RunCommand for InviteCommand {
                 Response::PlayerNotFound(ref user) if player.eq_ignore_ascii_case(user) => {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
 
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You invited [VIP] neyoa to your guild. They have 5 minutes to accept." ; "Online invite")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You sent an offline invite to [VIP] neyoa! They will have 5 minutes to accept once they come online!" ; "Offline invite")]
+    fn success(command: InviteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
+    }
+
+    #[test_case(InviteCommand { player: "n e y o a".to_string() }, "" ; "Invalid IGN")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "neyoa is already in another guild!" ; "In another guild")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You've already invited [VIP] neyoa to your guild! Wait for them to accept!" ; "Already invited")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "[VIP] neyoa is already in your guild!" ; "Already in the guild")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "Your guild is full!" ; "Guild full")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You cannot invite this player to your guild!" ; "Invites disabled")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Player not found")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You do not have permission to invite players!" ; "No permission")]
+    fn failures(command: InviteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }

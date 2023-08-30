@@ -3,8 +3,11 @@ use std::env::var;
 
 static CONFIG: OnceCell<Config> = OnceCell::new();
 
-pub fn init() -> crate::Result<&'static Config> {
-    Ok(CONFIG.get_or_try_init(Config::new)?)
+pub fn init(config: Config) {
+    CONFIG
+        .set(config)
+        .map_err(|_| ()) // Delete the existant config from error logs so as not to leak any secrets
+        .expect("Config already initialized")
 }
 
 pub fn config() -> &'static Config {
@@ -26,7 +29,7 @@ pub struct Channels {
 }
 
 impl Config {
-    fn new() -> Result<Config, EnvError> {
+    pub fn new_from_env() -> Result<Config, EnvError> {
         Ok(Config {
             discord_token: var("DISCORD_TOKEN")?,
             email: var("EMAIL").ok(),

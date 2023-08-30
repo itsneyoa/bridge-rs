@@ -61,3 +61,26 @@ impl RunCommand for HelpCommand {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use crate::config;
+
+    #[test]
+    fn help() {
+        config::init(config::Config {
+            discord_token: String::new(),
+            email: None,
+            server_address: String::new(),
+            server_port: 25565,
+            channels: config::Channels {
+                guild: 0,
+                officer: 0,
+            },
+        });
+
+        assert!(test_command(HelpCommand, "").is_embed())
+    }
+}

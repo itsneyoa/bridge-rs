@@ -40,14 +40,16 @@ impl RunCommand for SetRankCommand {
             )));
         };
 
-        let Ok(rank) = CleanString::try_from(self.rank.clone()) else {
+        let rank = CleanString::from(self.rank.clone());
+
+        if rank.is_empty() {
             return Err(CommandResponse::Failure(format!(
                 "`{rank}` is not a valid guild rank",
                 rank = self.rank
             )));
         };
 
-        Ok(MinecraftCommand::SetRank(player.clone(), rank.clone()))
+        Ok(MinecraftCommand::SetRank(player, rank))
     }
 
     fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
@@ -100,11 +102,37 @@ impl RunCommand for SetRankCommand {
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
 
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "[MVP+] neyoa was promoted from Advanced to Expert" ; "Promoted")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "[MVP+] neyoa was demoted from Staff to Expert" ; "Demoted")]
+    fn success(command: SetRankCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
+    }
+
+    #[test_case(SetRankCommand { player: "n e y o a".to_string(), rank: "expert".to_string() }, "" ; "Invalid IGN")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "".to_string() }, "" ; "Invalid rank")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "nonexistant".to_string() }, "I couldn't find a rank by the name of 'nonexistant'!\n----------------------------------------------------" ; "Unknown rank")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "They already have that rank!\n----------------------------------------------------" ; "Already has rank")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "You can only promote up to your own rank!\n----------------------------------------------------" ; "No permission (promoted)")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "You can only demote up to your own rank!\n----------------------------------------------------" ; "No permission (demoted)")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "[ADMIN] neyoa is not in your guild!" ; "Not in guild")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "You must be the Guild Master to use that command!" ; "No permission")]
+    fn failures(command: SetRankCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }

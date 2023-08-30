@@ -11,6 +11,7 @@ pub enum Response {
 
 const NO_PERMISSION: &[&str] = &[
     "You must be the Guild Master to use that command!",
+    "Your guild rank does not have permission to use this!",
     "You do not have permission to use this command!",
     "I'm sorry, but you do not have permission to perform this command. Please contact the server administrators if you believe that this is in error."
 ];
@@ -30,7 +31,7 @@ impl TryFrom<&str> for Response {
         }
 
         if let Some((_, username)) =
-            regex_captures!(r#"^Can't find a player by the name of (\w+)$"#, value)
+            regex_captures!(r#"^Can't find a player by the name of '(\w+)'$"#, value)
         {
             return Ok(Self::PlayerNotFound(username.to_string()));
         }
@@ -65,19 +66,12 @@ mod tests {
         assert!(Response::try_from(input).unwrap() == Response::NotInGuild("neyoa".to_string()))
     }
 
-    #[test_case("You must be the Guild Master to use that command!" ; "Guild Master")]
-    #[test_case("You do not have permission to use this command!" ; "No permission")]
-    #[test_case("I'm sorry, but you do not have permission to perform this command. Please contact the server administrators if you believe that this is in error." ; "Long")]
-    fn no_permission(input: &str) {
-        assert!(Response::try_from(input).unwrap() == Response::NoPermission)
-    }
-
-    #[test_case("Can't find a player by the name of neyoa")]
+    #[test_case("Can't find a player by the name of 'neyoa'" ; "Player not found")]
     fn player_not_found(input: &str) {
         assert!(Response::try_from(input).unwrap() == Response::PlayerNotFound("neyoa".to_string()))
     }
 
-    #[test_case("This command is currently disabled.")]
+    #[test_case("This command is currently disabled." ; "Command Disabled")]
     fn command_disabled(input: &str) {
         assert!(Response::try_from(input).unwrap() == Response::CommandDisabled)
     }

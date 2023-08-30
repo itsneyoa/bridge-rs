@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 async fn main() -> errors::Result<()> {
     pretty_env_logger::init();
     dotenvy::dotenv().ok();
-    config::init()?;
+    config::init(config::Config::new_from_env()?);
 
     // Graciously quit on any panics, usually bevy just prints them and continues
     let panic = {

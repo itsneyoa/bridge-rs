@@ -25,7 +25,7 @@ pub enum ChatEvent {
     Unknown(String),
 }
 
-const SEPERATOR: &str = "-----------------------------------------------------";
+const SEPERATOR: char = '-';
 
 impl From<&str> for ChatEvent {
     fn from(value: &str) -> Self {

@@ -40,11 +40,11 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    #[test_case("alpha_bravo")]
-    #[test_case("AlphaBravo123")]
-    #[test_case("0123456789")]
-    #[test_case("a")]
-    #[test_case("0123456789ABCDEF")]
+    #[test_case("alpha_bravo" ; "Contains underscore")]
+    #[test_case("AlphaBravo123" ; "Alphanumeric" )]
+    #[test_case("0123456789" ; "Numeric")]
+    #[test_case("a" ; "Min length")]
+    #[test_case("0123456789ABCDEF" ; "Max length")]
     fn valid_ign_is_accepted(input: &str) {
         assert!(ValidIGN::try_from(input).is_ok());
     }

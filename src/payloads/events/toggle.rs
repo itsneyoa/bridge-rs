@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    #[test_case("Guild > neyoa joined.")]
+    #[test_case("Guild > neyoa joined." ; "Join")]
     fn login(input: &'static str) {
         let Toggle { member, online } = input.try_into().unwrap();
 
@@ -49,7 +49,7 @@ mod tests {
         assert!(online);
     }
 
-    #[test_case("Guild > neyoa left.")]
+    #[test_case("Guild > neyoa left." ; "Leave")]
     fn logout(input: &'static str) {
         let Toggle { member, online } = input.try_into().unwrap();
 

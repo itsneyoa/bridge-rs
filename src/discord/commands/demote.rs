@@ -57,7 +57,7 @@ impl RunCommand for DemoteCommand {
 
             ChatEvent::Unknown(ref message) => {
                 if let Some((_, user)) = regex_captures!(
-                    r#"^(?:\\[.+?\\] )?(\w+) is already the lowest rank you've created!$"#,
+                    r#"^(?:\[.+?\] )?(\w+) is already the lowest rank you've created!$"#,
                     message
                 ) {
                     if player.eq_ignore_ascii_case(user) {
@@ -84,7 +84,7 @@ impl RunCommand for DemoteCommand {
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
 
@@ -99,24 +99,17 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    #[test]
-    fn success() {
-        let response = test_command(
-            DemoteCommand {
-                player: "neyoa".to_string(),
-            },
-            "[MVP+] neyoa was demoted from Expert to Advanced",
-        );
-
-        assert!(response.is_success())
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa was demoted from Expert to Advanced" ; "Demoted")]
+    fn success(command: DemoteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
     }
 
     #[test_case(DemoteCommand { player: "n e y o a".to_string() }, "" ; "Invalid IGN")]
-    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is already the lowest rank you've created!\n----------------------------------------------------" ; "Target is already lowest rank")]
-    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You can only demote up to your own rank!\n----------------------------------------------------" ; "Target is same rank as us")]
-    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is the guild master so can't be demoted!" ; "Target is guild master")]
-    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is not in your guild!" ; "Target not in guild")]
-    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Target not found")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is already the lowest rank you've created!\n----------------------------------------------------" ; "Already lowest rank")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You can only demote up to your own rank!\n----------------------------------------------------" ; "Same rank")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is the guild master so can't be demoted!" ; "Guild master")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is not in your guild!" ; "Not in guild")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You must be the Guild Master to use that command!" ; "No permission")]
     fn failures(command: DemoteCommand, message: &'static str) {
         assert!(test_command(command, message).is_failure());

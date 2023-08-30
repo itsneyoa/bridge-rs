@@ -36,7 +36,7 @@ impl RunCommand for UnmuteCommand {
             )));
         };
 
-        Ok(MinecraftCommand::Unmute(player.clone()))
+        Ok(MinecraftCommand::Unmute(player))
     }
 
     fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
@@ -60,8 +60,16 @@ impl RunCommand for UnmuteCommand {
                 }))
             }
 
-            ChatEvent::Unknown(message) if message == "This player is not muted!" => {
-                Some(Failure(format!("`{player}` is not muted", player = player)))
+            ChatEvent::Unknown(message) => {
+                if message == "This player is not muted!" {
+                    return Some(Failure(format!("`{player}` is not muted", player = player)));
+                }
+
+                if message == "The guild is not muted!" && player.eq_ignore_ascii_case("everyone") {
+                    return Some(Failure("`Guild Chat` is not muted".to_string()));
+                }
+
+                None
             }
 
             ChatEvent::CommandResponse(response) => match response {
@@ -70,11 +78,33 @@ impl RunCommand for UnmuteCommand {
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
 
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(UnmuteCommand { player: "neyoa".to_string() }, "[MVP+] neytwoa has unmuted [MVP+] neyoa" ; "Player")]
+    #[test_case(UnmuteCommand { player: "everyone".to_string() }, "[MVP+] neytwoa has unmuted the guild chat!" ; "Everyone")]
+    fn success(command: UnmuteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
+    }
+
+    #[test_case(UnmuteCommand { player: "n e y o a".to_string() }, "" ; "Invalid IGN")]
+    #[test_case(UnmuteCommand { player: "neyoa".to_string() }, "This player is not muted!" ; "Not muted")]
+    #[test_case(UnmuteCommand { player: "neyoa".to_string() }, "neyoa is not in your guild!" ; "Not in guild")]
+    #[test_case(UnmuteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
+    #[test_case(UnmuteCommand { player: "neyoa".to_string() }, "Your guild rank does not have permission to use this!" ; "No permission")]
+    fn failures(command: UnmuteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }

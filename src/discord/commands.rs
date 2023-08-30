@@ -200,8 +200,14 @@ impl Feedback {
 #[cfg(test)]
 mod testing {
     use super::*;
+    use crate::minecraft::USERNAME;
+    use parking_lot::RwLock;
 
     pub fn test_command<C: RunCommand>(command: C, message: &'static str) -> CommandResponse {
+        USERNAME
+            .set(RwLock::new("neytwoa".to_string()))
+            .expect("Username is already set");
+
         let command = match command.get_command() {
             Ok(command) => command,
             Err(response) => return response,

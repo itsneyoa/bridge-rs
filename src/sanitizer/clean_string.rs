@@ -11,7 +11,7 @@ impl From<String> for CleanString {
         Self(regex_replace_all!(
             r"[^\p{Letter}\p{Number}\p{Punctuation}\p{Space_Separator}\p{Math_Symbol}\p{Currency_Symbol}\p{Modifier_Symbol}\u2700-\u27BF]",
             &value,
-            |_| ""
+            ""
         ).to_string())
     }
 }

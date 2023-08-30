@@ -53,7 +53,7 @@ impl RunCommand for KickCommand {
         }
         .unwrap_or_else(|| CleanString::from("No reason provided".to_string()));
 
-        Ok(MinecraftCommand::Kick(player.clone(), reason))
+        Ok(MinecraftCommand::Kick(player, reason))
     }
 
     fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
@@ -73,16 +73,47 @@ impl RunCommand for KickCommand {
                 )))
             }
 
+            ChatEvent::Unknown(message) => {
+                if message == "You do not have permission to kick people from the guild!"
+                    || message == "You cannot kick yourself from the guild!"
+                {
+                    return Some(Failure(Response::NoPermission.to_string()));
+                }
+
+                None
+            }
+
             ChatEvent::CommandResponse(response) => match response {
                 Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                     if player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: Some("inactive".to_string()) }, "[VIP] neyoa was kicked from the guild by [MVP+] neytwoa!" ; "Reason")]
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "[VIP] neyoa was kicked from the guild by [MVP+] neytwoa!" ; "No reason")]
+    fn success(command: KickCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
+    }
+
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "[MVP++] neyoa is not in your guild!" ; "Not in guild")]
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "Can't find a player by the name of 'neyoa'" ; "Player not found")]
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "You do not have permission to kick people from the guild!" ; "No permission")]
+    #[test_case(KickCommand { player: "neytwoa".to_string(), reason: None }, "You cannot kick yourself from the guild!" ; "Self kick")]
+    fn failures(command: KickCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }

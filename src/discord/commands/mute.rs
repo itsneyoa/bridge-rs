@@ -50,7 +50,7 @@ impl RunCommand for MuteCommand {
             )));
         };
 
-        Ok(MinecraftCommand::Mute(player.clone(), duration, self.unit))
+        Ok(MinecraftCommand::Mute(player, duration, self.unit))
     }
 
     fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
@@ -78,22 +78,25 @@ impl RunCommand for MuteCommand {
                 }))
             }
 
-            ChatEvent::Unknown(message) => match message.as_str() {
-                "This player is already muted!" => {
-                    Some(Failure(format!("`{player}` is already muted")))
+            ChatEvent::Unknown(message) => {
+                if message == "This player is already muted!" {
+                    return Some(Failure(format!("`{player}` is already muted")));
                 }
-                "You cannot mute a guild member with a higher guild rank!" => {
-                    Some(Failure(Response::NoPermission.to_string()))
+
+                if message == "You cannot mute a guild member with a higher guild rank!"
+                    || message == "You cannot mute yourself from the guild!"
+                {
+                    return Some(Failure(Response::NoPermission.to_string()));
                 }
-                "You cannot mute someone for more than one month"
-                | "You cannot mute someone for less than a minute" => {
-                    Some(Failure("Invalid duration".to_string()))
+
+                if message == "You cannot mute someone for more than one month"
+                    || message == "You cannot mute someone for less than a minute"
+                {
+                    return Some(Failure("Invalid duration".to_string()));
                 }
-                "Invalid time format! Try 7d, 1d, 6h, 1h" => {
-                    Some(Failure("Invalid time format".to_string()))
-                }
-                _ => None,
-            },
+
+                None
+            }
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
@@ -101,10 +104,37 @@ impl RunCommand for MuteCommand {
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(response.to_string())),
+                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
                 _ => None,
             },
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "[MVP+] neytwoa has muted [MVP+] neyoa for 30d" ; "Player")]
+    #[test_case(MuteCommand { player: "everyone".to_string(), duration: 30, unit: TimeUnit::Day }, "[MVP+] neytwoa has muted the guild chat for 30d" ; "Everyone")]
+    fn success(command: MuteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_success())
+    }
+
+    #[test_case(MuteCommand { player: "n e y o a".to_string(), duration: 30, unit: TimeUnit::Day }, "" ; "Invalid IGN")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: i64::MAX, unit: TimeUnit::Day }, "" ; "Invalid Duration")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "This player is already muted!" ; "Already muted")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You cannot mute a guild member with a higher guild rank!" ; "Higher rank")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 31, unit: TimeUnit::Day }, "You cannot mute someone for more than one month" ; "Too long")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 0, unit: TimeUnit::Day }, "You cannot mute someone for less than a minute" ; "Too short")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "[YOUTUBE] neyoa is not in your guild!" ; "Not in guild")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You do not have permission to use this command!" ; "No permission")]
+    #[test_case(MuteCommand { player: "neytwoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You cannot mute yourself from the guild!" ; "Self mute")]
+    fn failures(command: MuteCommand, message: &'static str) {
+        assert!(test_command(command, message).is_failure());
     }
 }
