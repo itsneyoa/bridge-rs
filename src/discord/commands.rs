@@ -11,12 +11,13 @@ use super::colours;
 use crate::{
     payloads::{
         command::{CommandPayload, MinecraftCommand},
-        events::{ChatEvent, Response},
+        events::ChatEvent,
     },
     Result,
 };
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use strum::EnumIs;
 use tokio::sync::{mpsc, oneshot};
 use twilight_interactions::command::{CommandModel, CommandOption, CreateCommand, CreateOption};
 use twilight_model::channel::message::Embed;
@@ -67,41 +68,34 @@ pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
         .map(|_| ())?)
 }
 
-type CommandResult = Result<String, FeedbackError>;
-
-pub struct EmbedWrapper(Embed);
-
-impl From<EmbedWrapper> for Embed {
-    fn from(value: EmbedWrapper) -> Self {
-        value.0
-    }
+#[derive(Debug, EnumIs)]
+pub enum CommandResponse {
+    Success(String),
+    Failure(String),
+    Timeout,
 }
 
-impl From<Embed> for EmbedWrapper {
-    fn from(value: Embed) -> Self {
-        Self(value)
-    }
-}
-
-impl From<CommandResult> for EmbedWrapper {
-    fn from(value: Result<String, FeedbackError>) -> Self {
+impl From<CommandResponse> for Embed {
+    fn from(value: CommandResponse) -> Self {
         let (description, colour) = match value {
-            Ok(description) => (description, colours::GREEN),
-            Err(description) => (description.to_string(), colours::RED),
+            CommandResponse::Success(description) => (description, colours::GREEN),
+            CommandResponse::Failure(description) => (description.to_string(), colours::RED),
+            CommandResponse::Timeout => (
+                format!("Couldn't find any command response after {TIMEOUT_DELAY:?}"),
+                colours::RED,
+            ),
         };
 
-        let embed = EmbedBuilder::new()
+        EmbedBuilder::new()
             .description(description)
             .color(colour)
-            .build();
-
-        Self(embed)
+            .build()
     }
 }
 
 #[async_trait]
 pub trait RunCommand: CommandModel {
-    type Output: Into<EmbedWrapper>;
+    type Output: Into<Embed>;
 
     async fn run(self, feedback: Arc<tokio::sync::Mutex<Feedback>>) -> Self::Output;
 }
@@ -126,19 +120,17 @@ impl From<TimeUnit> for char {
     }
 }
 
+const TIMEOUT_DELAY: Duration = Duration::from_secs(10);
+
 pub struct Feedback {
     pub tx: mpsc::UnboundedSender<CommandPayload>,
     pub rx: async_broadcast::InactiveReceiver<ChatEvent>,
 }
 
 impl Feedback {
-    pub async fn execute<F>(
-        &mut self,
-        command: MinecraftCommand,
-        f: F,
-    ) -> Result<String, FeedbackError>
+    pub async fn execute<F>(&mut self, command: MinecraftCommand, f: F) -> CommandResponse
     where
-        F: Fn(ChatEvent) -> Option<Result<String, FeedbackError>>,
+        F: Fn(ChatEvent) -> Option<CommandResponse>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
@@ -162,30 +154,54 @@ impl Feedback {
                 unreachable!("The feedback channel was closed")
             } => result,
             timeout = async {
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                Err(FeedbackError::Custom("Couldn't find any command response after 10 seconds".to_string()))
+                tokio::time::sleep(TIMEOUT_DELAY).await;
+                CommandResponse::Timeout
             } => timeout,
         }
     }
 }
 
-#[derive(Debug)]
-pub enum FeedbackError {
-    Response(Response),
-    Custom(String),
-}
+#[cfg(test)]
+mod testing {
+    use super::*;
+    use futures::future::pending;
+    use tokio::sync::{mpsc, Mutex};
 
-impl From<Response> for FeedbackError {
-    fn from(value: Response) -> Self {
-        Self::Response(value)
-    }
-}
+    pub async fn test_command<C: RunCommand>(command: C, message: &'static str) -> C::Output {
+        let (command_tx, mut command_rx) = mpsc::unbounded_channel::<CommandPayload>();
 
-impl ToString for FeedbackError {
-    fn to_string(&self) -> String {
-        match self {
-            FeedbackError::Response(response) => response.to_string(),
-            FeedbackError::Custom(message) => message.to_string(),
+        let acknowledge_commands = async move {
+            while let Some(cmd) = command_rx.recv().await {
+                cmd.notify
+                    .lock()
+                    .take()
+                    .expect("No command sent acknowledgement channel")
+                    .send(())
+                    .expect("Command sent receiving acknowledgement channel was dropped");
+            }
+        };
+
+        let (chat_tx, chat_rx) = async_broadcast::broadcast::<ChatEvent>(1);
+
+        let feedback = Feedback {
+            tx: command_tx,
+            rx: chat_rx.deactivate(),
+        };
+
+        let send_message = async move {
+            chat_tx
+                .broadcast(ChatEvent::from(message))
+                .await
+                .expect("Command sending channel closed");
+
+            pending::<CommandResponse>().await
+        };
+
+        tokio::select! {
+            biased;
+            feedback = command.run(Arc::new(Mutex::new(feedback))) => feedback,
+            _ = send_message => unreachable!("send_message async blocks forever"),
+            _ = acknowledge_commands => unreachable!("command_rx closed")
         }
     }
 }

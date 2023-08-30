@@ -77,7 +77,7 @@ fn handle_incoming_chats(
         let content = event.packet.content();
         log::info!("Minecraft Chat: {}", content);
 
-        writer.send(ChatEvent::from(content))
+        writer.send(ChatEvent::from(content.as_str()))
     }
 }
 

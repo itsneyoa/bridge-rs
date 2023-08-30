@@ -1,4 +1,4 @@
-use super::{CommandResult, Feedback, FeedbackError, RunCommand};
+use super::{CommandResponse, Feedback, RunCommand};
 use crate::{
     minecraft,
     payloads::{
@@ -36,14 +36,13 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for KickCommand {
-    type Output = CommandResult;
+    type Output = CommandResponse;
 
-    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> CommandResult {
+    async fn run(self, feedback: Arc<Mutex<Feedback>>) -> CommandResponse {
+        use CommandResponse::*;
+
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(FeedbackError::Custom(format!(
-                "`{ign}` is not a valid IGN",
-                ign = self.player
-            )));
+            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
         };
 
         let reason = if let Some(reason) = self.reason {
@@ -69,16 +68,18 @@ impl RunCommand for KickCommand {
                     if player.eq_ignore_ascii_case(member)
                         && by == *minecraft::USERNAME.wait().read() =>
                 {
-                    Some(Ok(format!("`{member}` has been kicked from the guild")))
+                    Some(Success(format!(
+                        "`{member}` has been kicked from the guild"
+                    )))
                 }
 
                 ChatEvent::CommandResponse(response) => match response {
                     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                         if player.eq_ignore_ascii_case(user) =>
                     {
-                        Some(Err(response.into()))
+                        Some(Failure(response.to_string()))
                     }
-                    Response::NoPermission => Some(Err(response.into())),
+                    Response::NoPermission => Some(Failure(response.to_string())),
                     _ => None,
                 },
                 _ => None,

@@ -1,4 +1,4 @@
-use super::{CommandResult, Feedback, FeedbackError, RunCommand};
+use super::{CommandResponse, Feedback, RunCommand};
 use crate::{
     minecraft,
     payloads::{
@@ -32,14 +32,13 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for UnmuteCommand {
-    type Output = CommandResult;
+    type Output = CommandResponse;
 
     async fn run(mut self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
+        use CommandResponse::*;
+
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(FeedbackError::Custom(format!(
-                "`{ign}` is not a valid IGN",
-                ign = self.player
-            )));
+            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
         };
 
         let command = command::MinecraftCommand::Unmute(player.clone());
@@ -55,23 +54,23 @@ impl RunCommand for UnmuteCommand {
                             None => "everyone",
                         }) =>
                 {
-                    Some(Ok(match member {
+                    Some(Success(match member {
                         Some(member) => format!("`{member}` has been unmuted"),
                         None => format!("`Guild Chat` has been unmuted"),
                     }))
                 }
 
-                ChatEvent::Unknown(message) if message == "This player is not muted!" => Some(Err(
-                    FeedbackError::Custom(format!("`{player}` is not muted", player = player)),
-                )),
+                ChatEvent::Unknown(message) if message == "This player is not muted!" => {
+                    Some(Failure(format!("`{player}` is not muted", player = player)))
+                }
 
                 ChatEvent::CommandResponse(response) => match response {
                     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                         if player.eq_ignore_ascii_case(user) =>
                     {
-                        Some(Err(response.into()))
+                        Some(Failure(response.to_string()))
                     }
-                    Response::NoPermission => Some(Err(response.into())),
+                    Response::NoPermission => Some(Failure(response.to_string())),
                     _ => None,
                 },
 

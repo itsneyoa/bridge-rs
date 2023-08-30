@@ -1,4 +1,4 @@
-use super::{CommandResult, Feedback, FeedbackError, RunCommand};
+use super::{CommandResponse, Feedback, RunCommand};
 use crate::{
     payloads::{
         command,
@@ -32,14 +32,13 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for PromoteCommand {
-    type Output = CommandResult;
+    type Output = CommandResponse;
 
     async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
+        use CommandResponse::*;
+
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(FeedbackError::Custom(format!(
-                "`{ign}` is not a valid IGN",
-                ign = self.player
-            )));
+            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
         };
 
         let command = command::MinecraftCommand::Promote(player.clone());
@@ -52,7 +51,7 @@ impl RunCommand for PromoteCommand {
                     ref member,
                     old_rank,
                     new_rank,
-                }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
+                }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
                     "`{member}` has been promoted from `{old_rank}` to `{new_rank}`"
                 ))),
 
@@ -62,9 +61,9 @@ impl RunCommand for PromoteCommand {
                         message
                     ) {
                         if player.eq_ignore_ascii_case(user) {
-                            return Some(Err(FeedbackError::Custom(format!(
+                            return Some(Failure(format!(
                                 "`{user}` is already the highest rank"
-                            ))));
+                            )));
                         }
                     }
 
@@ -75,7 +74,7 @@ impl RunCommand for PromoteCommand {
                         )
                         .is_some_and(|(_, user)| player.eq_ignore_ascii_case(user))
                     {
-                        return Some(Err(Response::NoPermission.into()));
+                        return Some(Failure(Response::NoPermission.to_string()));
                     }
 
                     None
@@ -85,9 +84,9 @@ impl RunCommand for PromoteCommand {
                     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                         if player.eq_ignore_ascii_case(user) =>
                     {
-                        Some(Err(response.into()))
+                        Some(Failure(response.to_string()))
                     }
-                    Response::NoPermission => Some(Err(response.into())),
+                    Response::NoPermission => Some(Failure(response.to_string())),
                     _ => None,
                 },
 

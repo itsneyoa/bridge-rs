@@ -4,7 +4,7 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{self, EmbedWrapper, Feedback, RunCommand},
+        commands::{self, CommandResponse, Feedback, RunCommand},
         reactions, Discord,
     },
     minecraft,
@@ -160,15 +160,14 @@ impl DiscordHandler {
                     && msg_content.starts_with(author.as_str())
                     && msg_content.ends_with(content.as_str()) =>
                 {
-                    Some(Ok(String::new()))
+                    Some(CommandResponse::Success(String::new()))
                 }
 
                 _ => None,
             })
             .await
-            .is_err()
+            .is_timeout()
         {
-            // HACK: Currently, if an error is returned then we timed out
             message.react(self.http.clone(), reactions::TimedOut);
         };
     }
@@ -232,13 +231,13 @@ impl DiscordHandler {
                     )
                     .await?;
 
-                let payload: EmbedWrapper = {
+                let payload = {
                     use commands::GuildCommand::*;
 
                     let feedback = self.feedback.clone();
 
                     match command {
-                        Help(command) => command.run(feedback).await.into(),
+                        Help(command) => command.run(feedback).await,
                         Mute(command) => command.run(feedback).await.into(),
                         Unmute(command) => command.run(feedback).await.into(),
                         Invite(command) => command.run(feedback).await.into(),
@@ -251,7 +250,7 @@ impl DiscordHandler {
 
                 client
                     .update_response(&interaction.token)
-                    .embeds(Some(&[payload.into()]))
+                    .embeds(Some(&[payload]))
                     .expect("Invalid embeds in response")
                     .await
                     .map(|_| ())

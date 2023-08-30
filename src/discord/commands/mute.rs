@@ -1,4 +1,4 @@
-use super::{CommandResult, Feedback, FeedbackError, RunCommand, TimeUnit};
+use super::{CommandResponse, Feedback, RunCommand, TimeUnit};
 use crate::{
     minecraft,
     payloads::{
@@ -39,21 +39,20 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for MuteCommand {
-    type Output = CommandResult;
+    type Output = CommandResponse;
 
     async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
+        use CommandResponse::*;
+
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(FeedbackError::Custom(format!(
-                "`{ign}` is not a valid IGN",
-                ign = self.player
-            )));
+            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
         };
 
         let Ok(duration) = u8::try_from(self.duration) else {
-            return Err(FeedbackError::Custom(format!(
+            return Failure(format!(
                 "`{duration}` is not a valid mute duration",
                 duration = self.duration
-            )));
+            ));
         };
 
         let command = command::MinecraftCommand::Mute(player.clone(), duration, self.unit);
@@ -73,26 +72,26 @@ impl RunCommand for MuteCommand {
                         None => "everyone",
                     }) =>
                 {
-                    Some(Ok(match member {
+                    Some(Success(match member {
                         Some(member) => format!("`{member}` has been muted for {length}{unit}"),
                         None => format!("`Guild Chat` has been muted for {length}{unit}"),
                     }))
                 }
 
                 ChatEvent::Unknown(message) => match message.as_str() {
-                    "This player is already muted!" => Some(Err(FeedbackError::Custom(format!(
-                        "`{player}` is already muted"
-                    )))),
+                    "This player is already muted!" => {
+                        Some(Failure(format!("`{player}` is already muted")))
+                    }
                     "You cannot mute a guild member with a higher guild rank!" => {
-                        Some(Err(Response::NoPermission.into()))
+                        Some(Failure(Response::NoPermission.to_string()))
                     }
                     "You cannot mute someone for more than one month"
                     | "You cannot mute someone for less than a minute" => {
-                        Some(Err(FeedbackError::Custom("Invalid duration".to_string())))
+                        Some(Failure("Invalid duration".to_string()))
                     }
-                    "Invalid time format! Try 7d, 1d, 6h, 1h" => Some(Err(FeedbackError::Custom(
-                        "Invalid time format".to_string(),
-                    ))),
+                    "Invalid time format! Try 7d, 1d, 6h, 1h" => {
+                        Some(Failure("Invalid time format".to_string()))
+                    }
                     _ => None,
                 },
 
@@ -100,9 +99,9 @@ impl RunCommand for MuteCommand {
                 //     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                 //         if player.eq_ignore_ascii_case(user) =>
                 //     {
-                //         Some(Err(response.into()))
+                //         Some(Failure(response.into()))
                 //     }
-                //     Response::NoPermission => Some(Err(response.into())),
+                //     Response::NoPermission => Some(Failure(response.into())),
                 //     _ => None,
                 // },
                 _ => None,

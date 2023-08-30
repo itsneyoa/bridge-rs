@@ -1,4 +1,4 @@
-use super::{CommandResult, Feedback, FeedbackError, RunCommand};
+use super::{CommandResponse, Feedback, RunCommand};
 use crate::{
     payloads::{
         command,
@@ -36,21 +36,20 @@ fn permissions() -> Permissions {
 
 #[async_trait]
 impl RunCommand for SetRankCommand {
-    type Output = CommandResult;
+    type Output = CommandResponse;
 
     async fn run(self, feedback: Arc<Mutex<Feedback>>) -> Self::Output {
+        use CommandResponse::*;
+
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(FeedbackError::Custom(format!(
-                "`{ign}` is not a valid IGN",
-                ign = self.player
-            )));
+            return Failure(format!("`{ign}` is not a valid IGN", ign = self.player));
         };
 
         let Ok(rank) = CleanString::try_from(self.rank.clone()) else {
-            return Err(FeedbackError::Custom(format!(
+            return Failure(format!(
                 "`{rank}` is not a valid guild rank",
                 rank = self.rank
-            )));
+            ));
         };
 
         let command = command::MinecraftCommand::SetRank(player.clone(), rank.clone());
@@ -63,7 +62,7 @@ impl RunCommand for SetRankCommand {
                     ref member,
                     old_rank,
                     new_rank,
-                }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
+                }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
                     "`{member}` has been promoted from `{old_rank}` to `{new_rank}`"
                 ))),
 
@@ -71,7 +70,7 @@ impl RunCommand for SetRankCommand {
                     ref member,
                     old_rank,
                     new_rank,
-                }) if player.eq_ignore_ascii_case(member) => Some(Ok(format!(
+                }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
                     "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
                 ))),
 
@@ -79,21 +78,17 @@ impl RunCommand for SetRankCommand {
                     if let Some((_, rank)) =
                         regex_captures!(r#"I couldn't find a rank by the name of '(.+)'!"#, message)
                     {
-                        return Some(Err(FeedbackError::Custom(format!(
-                            "Couldn't find rank `{rank}`"
-                        ))));
+                        return Some(Failure(format!("Couldn't find rank `{rank}`")));
                     }
 
                     if message == "They already have that rank!" {
-                        return Some(Err(FeedbackError::Custom(format!(
-                            "`{player}` already has rank `{rank}`"
-                        ))));
+                        return Some(Failure(format!("`{player}` already has rank `{rank}`")));
                     }
 
                     if message == "You can only demote up to your own rank!"
                         || message == "You can only promote up to your own rank!"
                     {
-                        return Some(Err(Response::NoPermission.into()));
+                        return Some(Failure(Response::NoPermission.to_string()));
                     }
 
                     None
@@ -103,9 +98,9 @@ impl RunCommand for SetRankCommand {
                     Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
                         if player.eq_ignore_ascii_case(user) =>
                     {
-                        Some(Err(response.into()))
+                        Some(Failure(response.to_string()))
                     }
-                    Response::NoPermission => Some(Err(response.into())),
+                    Response::NoPermission => Some(Failure(response.to_string())),
                     _ => None,
                 },
 
