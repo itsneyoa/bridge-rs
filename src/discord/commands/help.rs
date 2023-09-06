@@ -1,7 +1,7 @@
 use super::{RunCommand, SlashCommandResponse};
 use crate::{
     config,
-    discord::{colours, handler::avatar_url, reactions::Reaction},
+    discord::{avatar_url, colours, reactions::Reaction},
     payloads::{command::MinecraftCommand, events::ChatEvent},
 };
 use strum::IntoEnumIterator;

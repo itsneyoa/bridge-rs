@@ -1,7 +1,8 @@
 mod autocomplete;
 mod commands;
-mod handler;
 mod reactions;
+mod recv;
+mod send;
 pub mod status;
 
 mod colours {
@@ -94,7 +95,7 @@ impl Discord {
         {
             let discord = discord.clone();
             tokio::spawn(async move {
-                let handler = Arc::new(handler::Discord::new(discord));
+                let handler = Arc::new(recv::DiscordHandler::new(discord));
 
                 loop {
                     let event = shard.next_event().await;
@@ -118,7 +119,7 @@ impl Discord {
 
         // Handle events incoming from Minecraft
         tokio::spawn(async move {
-            let handler = Arc::new(handler::Minecraft::new(discord));
+            let handler = Arc::new(send::MinecraftHandler::new(discord));
             while let Ok(event) = receiver.recv().await {
                 let handler = handler.clone();
 
@@ -128,4 +129,9 @@ impl Discord {
             log::error!("Minecraft -> Discord receive channel closed");
         });
     }
+}
+
+#[inline]
+pub fn avatar_url(ign: &str) -> String {
+    format!("https://mc-heads.net/avatar/{ign}/512")
 }

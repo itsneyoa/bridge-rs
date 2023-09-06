@@ -24,7 +24,7 @@ pub struct SetRankCommand {
 
     /// The guild rank to set the player to
     #[command(min_length = 1, max_length = 32)]
-    rank: String, // TODO: Check the naming requirements of a guild rank
+    rank: String, // The rank's name must only contain numbers, letters or spaces!
 }
 
 fn permissions() -> Permissions {
@@ -42,7 +42,15 @@ impl RunCommand for SetRankCommand {
             )));
         };
 
-        let rank = CleanString::from(self.rank.clone());
+        let rank = CleanString::from(
+            self.rank
+                .clone()
+                .chars()
+                .filter(|c| c.is_alphanumeric() || ' '.eq(c))
+                .collect::<String>()
+                .trim()
+                .to_string(),
+        );
 
         if rank.is_empty() {
             return Err(SlashCommandResponse::Failure(format!(
@@ -128,7 +136,8 @@ mod tests {
     }
 
     #[test_case(SetRankCommand { player: "n e y o a".to_string(), rank: "expert".to_string() }, "" ; "Invalid IGN")]
-    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "".to_string() }, "" ; "Invalid rank")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "".to_string() }, " " ; "Empty rank")]
+    #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "".to_string() }, "#!_9" ; "Invalid rank")]
     #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "nonexistant".to_string() }, "I couldn't find a rank by the name of 'nonexistant'!\n----------------------------------------------------" ; "Unknown rank")]
     #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "They already have that rank!\n----------------------------------------------------" ; "Already has rank")]
     #[test_case(SetRankCommand { player: "neyoa".to_string(), rank: "expert".to_string() }, "You can only promote up to your own rank!\n----------------------------------------------------" ; "No permission (promoted)")]
