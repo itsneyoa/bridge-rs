@@ -15,17 +15,15 @@ use azalea::{
     protocol::packets::game::ClientboundGamePacket,
     GameProfileComponent,
 };
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use parking_lot::{Mutex, RwLock};
-use std::{collections::VecDeque, sync::Arc, time::Instant};
+use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{mpsc, oneshot};
 
 pub static USERNAME: OnceCell<RwLock<String>> = OnceCell::new();
 
 type Sender = async_broadcast::Sender<ChatEvent>;
 type Receiver = Arc<Mutex<mpsc::UnboundedReceiver<CommandPayload>>>;
-
-static NOW: Lazy<Instant> = Lazy::new(Instant::now);
 
 pub struct MinecraftBridgePlugin {
     pub sender: Sender,
@@ -92,7 +90,9 @@ fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: 
         use MinecraftCommand::*;
 
         let command = match &event.command {
-            ChatMessage(command) => command.to_string(),
+            ChatMessage(author, message, chat) => {
+                format!("/{prefix} {author}: {message}", prefix = chat.prefix())
+            }
             Mute(player, duration, unit) => {
                 format!(
                     "/g mute {player} {duration}{unit}",
@@ -106,6 +106,8 @@ fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: 
             Promote(player) => format!("/g promote {player}"),
             SetRank(player, rank) => format!("/g setrank {player} {rank}"),
         };
+
+        assert!(command.len() <= 256, "Command too long: {command}");
 
         log::debug!("Sending to Minecraft: {}", command);
 
@@ -142,8 +144,6 @@ fn drain_message_queue(
         entity,
         content: message.clone(),
     });
-
-    println!("{}", NOW.elapsed().as_secs());
 
     notify
         .send(())

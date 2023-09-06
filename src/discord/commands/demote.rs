@@ -1,4 +1,4 @@
-use super::{CommandResponse, RunCommand};
+use super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
@@ -28,9 +28,11 @@ fn permissions() -> Permissions {
 }
 
 impl RunCommand for DemoteCommand {
-    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
+    type Response = SlashCommandResponse;
+
+    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(CommandResponse::Failure(format!(
+            return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
             )));
@@ -39,8 +41,8 @@ impl RunCommand for DemoteCommand {
         Ok(MinecraftCommand::Demote(player))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
-        use CommandResponse::*;
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+        use SlashCommandResponse::*;
 
         let MinecraftCommand::Demote(player) = command else {
             unreachable!("Expected Minecraft::Demote, got {command:?}");
@@ -79,12 +81,14 @@ impl RunCommand for DemoteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
                     if player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
+                Response::NoPermission | Response::BotNotInGuild => {
+                    Some(Failure(response.to_string()))
+                }
                 _ => None,
             },
 
@@ -111,6 +115,7 @@ mod tests {
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "[MVP+] neyoa is not in your guild!" ; "Not in guild")]
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
     #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You must be the Guild Master to use that command!" ; "No permission")]
+    #[test_case(DemoteCommand { player: "neyoa".to_string() }, "You must be in a guild to use this command!" ; "Bot not in a guild")]
     fn failures(command: DemoteCommand, message: &'static str) {
         assert!(test_command(command, message).is_failure());
     }

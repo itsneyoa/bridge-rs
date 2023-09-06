@@ -1,4 +1,4 @@
-use super::{CommandResponse, RunCommand};
+use super::{RunCommand, SlashCommandResponse};
 use crate::{
     minecraft,
     payloads::{
@@ -32,9 +32,11 @@ fn permissions() -> Permissions {
 }
 
 impl RunCommand for KickCommand {
-    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
+    type Response = SlashCommandResponse;
+
+    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(CommandResponse::Failure(format!(
+            return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
             )));
@@ -56,8 +58,8 @@ impl RunCommand for KickCommand {
         Ok(MinecraftCommand::Kick(player, reason))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
-        use CommandResponse::*;
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+        use SlashCommandResponse::*;
 
         let MinecraftCommand::Kick(player, _) = command else {
             unreachable!("Expected Minecraft::Kick, got {command:?}");
@@ -84,12 +86,14 @@ impl RunCommand for KickCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
                     if player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
+                Response::NoPermission | Response::BotNotInGuild => {
+                    Some(Failure(response.to_string()))
+                }
                 _ => None,
             },
             _ => None,
@@ -113,6 +117,7 @@ mod tests {
     #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "Can't find a player by the name of 'neyoa'" ; "Player not found")]
     #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "You do not have permission to kick people from the guild!" ; "No permission")]
     #[test_case(KickCommand { player: "neytwoa".to_string(), reason: None }, "You cannot kick yourself from the guild!" ; "Self kick")]
+    #[test_case(KickCommand { player: "neyoa".to_string(), reason: None }, "You must be in a guild to use this command!" ; "Bot not in a guild")]
     fn failures(command: KickCommand, message: &'static str) {
         assert!(test_command(command, message).is_failure());
     }

@@ -1,4 +1,4 @@
-use super::{CommandResponse, RunCommand};
+use super::{RunCommand, SlashCommandResponse};
 use crate::{
     config,
     discord::{colours, handler::avatar_url, reactions::Reaction},
@@ -23,7 +23,9 @@ fn permissions() -> Permissions {
 }
 
 impl RunCommand for HelpCommand {
-    fn get_command(self) -> Result<MinecraftCommand, CommandResponse> {
+    type Response = SlashCommandResponse;
+
+    fn get_command(self) -> Result<MinecraftCommand, SlashCommandResponse> {
         let help_embed = EmbedBuilder::new()
             .title("Bridge Help")
             .field(EmbedField {
@@ -52,10 +54,10 @@ impl RunCommand for HelpCommand {
             .color(colours::GREEN)
             .build();
 
-        Err(CommandResponse::Embed(Box::new(help_embed)))
+        Err(SlashCommandResponse::Embed(Box::new(help_embed)))
     }
 
-    fn check_event(_: &MinecraftCommand, _: ChatEvent) -> Option<CommandResponse> {
+    fn check_event(_: &MinecraftCommand, _: ChatEvent) -> Option<SlashCommandResponse> {
         unreachable!(
             "Help command should always return Err(CommandResponse::Embed(embed)) so `check_event` is never called"
         )

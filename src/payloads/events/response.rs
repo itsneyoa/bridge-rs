@@ -3,10 +3,11 @@ use lazy_regex::regex_captures;
 
 #[derive(Event, Debug, Clone, PartialEq)]
 pub enum Response {
-    NotInGuild(String),
+    PlayerNotInGuild(String),
     NoPermission,
     PlayerNotFound(String),
     CommandDisabled,
+    BotNotInGuild,
 }
 
 const NO_PERMISSION: &[&str] = &[
@@ -23,7 +24,7 @@ impl TryFrom<&str> for Response {
         if let Some((_, username)) =
             regex_captures!(r#"^(?:\[.+?\] )?(\w+) is not in your guild!$"#, value)
         {
-            return Ok(Self::NotInGuild(username.to_string()));
+            return Ok(Self::PlayerNotInGuild(username.to_string()));
         }
 
         if NO_PERMISSION.contains(&value) {
@@ -40,6 +41,10 @@ impl TryFrom<&str> for Response {
             return Ok(Self::CommandDisabled);
         }
 
+        if value == r#"You must be in a guild to use this command!"# {
+            return Ok(Self::BotNotInGuild);
+        }
+
         Err(())
     }
 }
@@ -47,10 +52,11 @@ impl TryFrom<&str> for Response {
 impl ToString for Response {
     fn to_string(&self) -> String {
         match self {
-            Self::NotInGuild(user) => format!("`{user}` is not in the guild"),
+            Self::PlayerNotInGuild(user) => format!("`{user}` is not in the guild"),
             Self::NoPermission => "I don't have permission to do that".to_string(),
             Self::PlayerNotFound(user) => format!("`{user}` could not be found"),
             Self::CommandDisabled => "This command is currently disabled".to_string(),
+            Self::BotNotInGuild => "I'm not in a guild".to_string(),
         }
     }
 }
@@ -63,7 +69,9 @@ mod tests {
     #[test_case("neyoa is not in your guild!" ; "Ro rank")]
     #[test_case("[MVP+] neyoa is not in your guild!" ; "Rank")]
     fn not_in_guild(input: &str) {
-        assert!(Response::try_from(input).unwrap() == Response::NotInGuild("neyoa".to_string()))
+        assert!(
+            Response::try_from(input).unwrap() == Response::PlayerNotInGuild("neyoa".to_string())
+        )
     }
 
     #[test_case("Can't find a player by the name of 'neyoa'" ; "Player not found")]

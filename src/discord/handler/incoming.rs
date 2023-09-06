@@ -4,17 +4,19 @@ use crate::{
     config,
     discord::{
         autocomplete,
-        commands::{CommandResponse, Feedback, GuildCommand},
-        reactions, Discord,
+        commands::{Feedback, GuildCommand, RunCommand, SlashCommandResponse},
+        reactions::{self, Reaction},
+        Discord,
     },
     minecraft,
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, Message},
+        events::{ChatEvent, Message, Response},
     },
     sanitizer::CleanString,
 };
 use std::{ops::Deref, sync::Arc};
+use strum::EnumIs;
 use tokio::sync::Mutex;
 use twilight_gateway::Event;
 use twilight_interactions::command::{CommandModel, CreateCommand};
@@ -100,7 +102,7 @@ impl DiscordHandler {
             message.channel_id
         );
 
-        let dirty_author = if let Some(reply) = &message.referenced_message {
+        let author = if let Some(reply) = &message.referenced_message {
             format!(
                 "{author} ≫ {replying_to}",
                 author = message.get_author_display_name(),
@@ -109,66 +111,42 @@ impl DiscordHandler {
         } else {
             message.get_author_display_name().to_string()
         };
-        let dirty_content = message.content_clean(&self.cache).to_string();
+        let content = message.content_clean(&self.cache).to_string();
 
-        let author = CleanString::from(dirty_author.clone());
-        let content = CleanString::from(dirty_content.clone());
-
-        if author.is_empty() || content.is_empty() {
-            message.react(self.http.clone(), reactions::EmptyField);
-            return;
-        }
-
-        let dest_chat = match message.channel_id.get() {
+        let chat = match message.channel_id.get() {
             id if id == config().channels.guild => Chat::Guild,
             id if id == config().channels.officer => Chat::Officer,
             _ => return,
         };
 
-        let prefix = match dest_chat {
-            Chat::Guild => "gc",
-            Chat::Officer => "oc",
+        let (command, issues) = match ChatCommand::new(author, content, chat) {
+            Ok((command, issues)) => (command, issues),
+            Err(issue) => {
+                return message.react(self.http.clone(), issue);
+            }
         };
 
-        let mut command = format!("/{prefix} ").as_str() + author.clone() + ": " + content.clone();
-
-        if *content != dirty_content || *author != dirty_author {
-            message.react(self.http.clone(), reactions::IllegalCharacters);
+        for issue in issues {
+            message.react(self.http.clone(), issue)
         }
 
-        if command.len() > 256 {
-            message.react(self.http.clone(), reactions::TooLong);
-            command.truncate(256);
-        }
-
-        let command = MinecraftCommand::ChatMessage(command);
-
-        if self
+        match self
             .feedback
             .lock()
             .await
-            .execute(command, |_, event| match event {
-                ChatEvent::Message(Message {
-                    author: ref msg_author,
-                    content: ref msg_content,
-                    chat,
-                }) if chat == dest_chat
-                    && minecraft::USERNAME
-                        .wait()
-                        .read()
-                        .eq_ignore_ascii_case(msg_author)
-                    && msg_content.starts_with(author.as_str())
-                    && msg_content.ends_with(content.as_str()) =>
-                {
-                    Some(CommandResponse::Success(String::new()))
-                }
-
-                _ => None,
-            })
+            .execute(
+                command
+                    .get_command()
+                    .expect("ChatCommand.get_command() should always return Ok(_)"),
+                ChatCommand::check_event,
+            )
             .await
-            .is_timeout()
         {
-            message.react(self.http.clone(), reactions::TimedOut);
+            Some(ChatCommandResponse::Success) => {}
+            Some(ChatCommandResponse::Failure(reaction)) => {
+                message.react(self.http.clone(), reaction)
+            }
+            None => message.react(self.http.clone(), reactions::TimedOut),
         };
     }
 
@@ -238,6 +216,7 @@ impl DiscordHandler {
                         .await
                         .execute(command, matcher)
                         .await
+                        .unwrap_or_else(|| SlashCommandResponse::Timeout)
                         .into(),
 
                     Err(response) => response.into(),
@@ -324,5 +303,164 @@ impl DiscordHandler {
             )
             .await
             .map(|_| ())?)
+    }
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ChatCommand {
+    pub author: CleanString,
+    pub message: CleanString,
+    pub chat: Chat,
+}
+
+impl ChatCommand {
+    fn new(author: String, message: String, chat: Chat) -> Result<(Self, Vec<Reaction>), Reaction> {
+        let clean_author = CleanString::from(author.clone());
+        let clean_message = CleanString::from(message.clone());
+
+        if clean_author.is_empty() || clean_message.is_empty() {
+            return Err(Reaction::EmptyField);
+        }
+
+        let mut issues = vec![];
+
+        let clean_trimmed_message = clean_message
+            .chars()
+            .take(256 - 1 - chat.prefix().chars().count() - 1 - clean_author.chars().count() - 2)
+            .collect::<CleanString>();
+
+        if author != clean_author || message != clean_message {
+            issues.push(reactions::IllegalCharacters);
+        }
+
+        if clean_message.chars().count() != clean_trimmed_message.chars().count() {
+            issues.push(reactions::TooLong);
+        }
+
+        Ok((
+            Self {
+                author: clean_author,
+                message: clean_trimmed_message,
+                chat,
+            },
+            issues,
+        ))
+    }
+}
+
+#[derive(Debug, EnumIs)]
+pub enum ChatCommandResponse {
+    Success,
+    Failure(Reaction),
+}
+
+impl RunCommand for ChatCommand {
+    type Response = ChatCommandResponse;
+
+    fn get_command(self) -> crate::Result<MinecraftCommand, ChatCommandResponse> {
+        Ok(MinecraftCommand::ChatMessage(
+            self.author,
+            self.message,
+            self.chat,
+        ))
+    }
+
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<ChatCommandResponse> {
+        use ChatCommandResponse::*;
+
+        let MinecraftCommand::ChatMessage(author, content, dest_chat) = command else {
+            unreachable!("Expected Minecraft::Demote, got {command:?}");
+        };
+
+        match event {
+            ChatEvent::Message(Message {
+                author: ref msg_author,
+                content: ref msg_content,
+                ref chat,
+            }) if chat == dest_chat
+                && minecraft::USERNAME
+                    .wait()
+                    .read()
+                    .eq_ignore_ascii_case(msg_author)
+                && msg_content.starts_with(author.as_str())
+                && msg_content.ends_with(content.as_str()) =>
+            {
+                Some(Success)
+            }
+
+            ChatEvent::CommandResponse(response) => match response {
+                Response::BotNotInGuild => Some(Failure(reactions::NotInGuild)),
+                Response::CommandDisabled => Some(Failure(reactions::Warning)),
+                _ => None,
+            },
+
+            ChatEvent::Unknown(message) => {
+                if message.starts_with("You're currently guild muted for") && message.ends_with('!')
+                {
+                    return Some(Failure(reactions::Muted));
+                }
+
+                if message == "You don't have access to the officer chat!" && dest_chat.is_officer()
+                {
+                    return Some(Failure(reactions::NoPermission));
+                }
+
+                if message == "You must be in a guild to use this command!" {
+                    return Some(Failure(reactions::NotInGuild));
+                }
+
+                None
+            }
+
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::commands::testing::test_command;
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap(), "Guild > neytwoa: neyoa: Hello, world!" ; "guild")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Officer).unwrap(), "Officer > neytwoa: neyoa: Hello, world!" ; "officer")]
+    fn success(command: (ChatCommand, Vec<Reaction>), message: &'static str) {
+        assert!(command.1.is_empty());
+        assert!(test_command(command.0, message).is_success());
+    }
+
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap().0, "You're currently guild muted for 29d 23h 59m 59s!", Reaction::Muted ; "Muted (days)")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap().0, "You're currently guild muted for 23h 59m 59s!", Reaction::Muted ; "Muted (hours)")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap().0, "You're currently guild muted for 59m 59s!", Reaction::Muted ; "Muted (minutes)")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap().0, "You're currently guild muted for 59s!", Reaction::Muted ; "Muted (seconds)")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Officer).unwrap().0, "You don't have access to the officer chat!", Reaction::NoPermission ; "No permission")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap().0, "You must be in a guild to use this command!", Reaction::NotInGuild ; "Not in a guild")]
+    fn failures(command: ChatCommand, message: &'static str, reaction: Reaction) {
+        let ChatCommandResponse::Failure(got) = test_command(command, message) else {
+            panic!("Expected failure")
+        };
+
+        assert_eq!(got, reaction);
+    }
+
+    #[test_case(ChatCommand::new("😀".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap_err(), Reaction::EmptyField ; "Author")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "😀".to_string(), Chat::Guild).unwrap_err(), Reaction::EmptyField ; "Content")]
+    fn empty_field(err: Reaction, reaction: Reaction) {
+        assert_eq!(err, reaction);
+    }
+
+    #[test_case(ChatCommand::new("ney😀oa".to_string(), "Hello, world!".to_string(), Chat::Guild).unwrap(), "Guild > neytwoa: neyoa: Hello, world!" ; "Author")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "Hello, 😀world!".to_string(), Chat::Guild).unwrap(), "Guild > neytwoa: neyoa: Hello, world!" ; "Content")]
+    fn trimmed_content(command: (ChatCommand, Vec<Reaction>), message: &'static str) {
+        assert_eq!(command.1, vec![Reaction::IllegalCharacters]);
+        assert!(test_command(command.0, message).is_success());
+    }
+
+    #[test_case(ChatCommand::new("a".repeat(256 - 6 - 13 + 1), "Hello, world!".to_string(), Chat::Guild).unwrap() ; "Author")]
+    #[test_case(ChatCommand::new("neyoa".to_string(), "a".repeat(256 - 6 - 5 + 1), Chat::Guild).unwrap() ; "Content")]
+    fn too_long(command: (ChatCommand, Vec<Reaction>)) {
+        assert_eq!(command.1, vec![Reaction::TooLong]);
     }
 }

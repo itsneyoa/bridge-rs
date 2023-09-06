@@ -50,12 +50,12 @@ pub enum GuildCommand {
     SetRank(setrank::SetRankCommand),
 }
 
-type EventChecker = fn(&MinecraftCommand, ChatEvent) -> Option<CommandResponse>;
+type EventChecker = fn(&MinecraftCommand, ChatEvent) -> Option<SlashCommandResponse>;
 
 impl GuildCommand {
     pub fn get_command_or_response(
         self,
-    ) -> Result<(MinecraftCommand, EventChecker), CommandResponse> {
+    ) -> Result<(MinecraftCommand, EventChecker), SlashCommandResponse> {
         let checker = self.get_event_checker();
 
         let command = match self {
@@ -104,23 +104,23 @@ pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
 }
 
 #[derive(Debug, EnumIs)]
-pub enum CommandResponse {
+pub enum SlashCommandResponse {
     Success(String),
     Failure(String),
-    Timeout,
     Embed(Box<Embed>),
+    Timeout,
 }
 
-impl From<CommandResponse> for Embed {
-    fn from(value: CommandResponse) -> Self {
+impl From<SlashCommandResponse> for Embed {
+    fn from(value: SlashCommandResponse) -> Self {
         let (description, colour) = match value {
-            CommandResponse::Success(description) => (description, colours::GREEN),
-            CommandResponse::Failure(description) => (description.to_string(), colours::RED),
-            CommandResponse::Timeout => (
+            SlashCommandResponse::Success(description) => (description, colours::GREEN),
+            SlashCommandResponse::Failure(description) => (description.to_string(), colours::RED),
+            SlashCommandResponse::Timeout => (
                 format!("Couldn't find any command response after {TIMEOUT_DELAY:?}"),
                 colours::RED,
             ),
-            CommandResponse::Embed(embed) => return *embed,
+            SlashCommandResponse::Embed(embed) => return *embed,
         };
 
         EmbedBuilder::new()
@@ -130,10 +130,16 @@ impl From<CommandResponse> for Embed {
     }
 }
 
-pub trait RunCommand: CommandModel {
-    fn get_command(self) -> Result<MinecraftCommand, CommandResponse>;
+pub trait RunCommand {
+    /// The type of response that the command returns
+    type Response;
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse>;
+    /// Get the command that will be sent to Minecraft, or the response if the command is invalid
+    fn get_command(self) -> Result<MinecraftCommand, Self::Response>;
+
+    /// Check if the event is a response to the command, and return the response if it is
+    // TODO: Allow some events to consume multiple responses (needed for /g online, /g list, etc. and also /execute for better feedback)
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<Self::Response>;
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]
@@ -164,9 +170,9 @@ pub struct Feedback {
 }
 
 impl Feedback {
-    pub async fn execute<F>(&mut self, command: MinecraftCommand, f: F) -> CommandResponse
+    pub async fn execute<F, R>(&mut self, command: MinecraftCommand, f: F) -> Option<R>
     where
-        F: Fn(&MinecraftCommand, ChatEvent) -> Option<CommandResponse>,
+        F: Fn(&MinecraftCommand, ChatEvent) -> Option<R>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
@@ -188,25 +194,22 @@ impl Feedback {
                 }
 
                 unreachable!("The feedback channel was closed")
-            } => result,
-            timeout = async {
+            } => Some(result),
+            _ = async {
                 tokio::time::sleep(TIMEOUT_DELAY).await;
-                CommandResponse::Timeout
-            } => timeout,
+            } => None,
         }
     }
 }
 
 #[cfg(test)]
-mod testing {
+pub mod testing {
     use super::*;
     use crate::minecraft::USERNAME;
     use parking_lot::RwLock;
 
-    pub fn test_command<C: RunCommand>(command: C, message: &'static str) -> CommandResponse {
-        USERNAME
-            .set(RwLock::new("neytwoa".to_string()))
-            .expect("Username is already set");
+    pub fn test_command<R, C: RunCommand<Response = R>>(command: C, message: &'static str) -> R {
+        USERNAME.set(RwLock::new("neytwoa".to_string())).ok();
 
         let command = match command.get_command() {
             Ok(command) => command,

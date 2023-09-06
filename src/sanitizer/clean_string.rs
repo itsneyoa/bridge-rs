@@ -12,7 +12,13 @@ impl From<String> for CleanString {
             r"[^\p{Letter}\p{Number}\p{Punctuation}\p{Space_Separator}\p{Math_Symbol}\p{Currency_Symbol}\p{Modifier_Symbol}\u2700-\u27BF]",
             &value,
             ""
-        ).to_string())
+        ).trim().to_string())
+    }
+}
+
+impl FromIterator<char> for CleanString {
+    fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
+        Self::from(iter.into_iter().collect::<String>())
     }
 }
 
@@ -57,6 +63,12 @@ impl Add<CleanString> for &str {
 
     fn add(self, rhs: CleanString) -> Self::Output {
         CleanString(self.to_string() + rhs.0.as_str())
+    }
+}
+
+impl PartialEq<CleanString> for String {
+    fn eq(&self, other: &CleanString) -> bool {
+        self == &other.0
     }
 }
 

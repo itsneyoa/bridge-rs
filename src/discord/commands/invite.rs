@@ -1,4 +1,4 @@
-use super::{CommandResponse, RunCommand};
+use super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
@@ -29,9 +29,11 @@ fn permissions() -> Permissions {
 }
 
 impl RunCommand for InviteCommand {
-    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
+    type Response = SlashCommandResponse;
+
+    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(CommandResponse::Failure(format!(
+            return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
             )));
@@ -40,8 +42,8 @@ impl RunCommand for InviteCommand {
         Ok(MinecraftCommand::Invite(player))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
-        use CommandResponse::*;
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+        use SlashCommandResponse::*;
 
         let MinecraftCommand::Invite(player) = command else {
             unreachable!("Expected Minecraft::Invite, got {command:?}");
@@ -117,7 +119,9 @@ impl RunCommand for InviteCommand {
                 Response::PlayerNotFound(ref user) if player.eq_ignore_ascii_case(user) => {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
+                Response::NoPermission | Response::BotNotInGuild => {
+                    Some(Failure(response.to_string()))
+                }
                 _ => None,
             },
 
@@ -146,6 +150,8 @@ mod tests {
     #[test_case(InviteCommand { player: "neyoa".to_string() }, "You cannot invite this player to your guild!" ; "Invites disabled")]
     #[test_case(InviteCommand { player: "neyoa".to_string() }, "Can't find a player by the name of 'neyoa'" ; "Player not found")]
     #[test_case(InviteCommand { player: "neyoa".to_string() }, "You do not have permission to invite players!" ; "No permission")]
+    #[test_case(InviteCommand { player: "neyoa".to_string() }, "You must be in a guild to use this command!" ; "Bot not in a guild")]
+
     fn failures(command: InviteCommand, message: &'static str) {
         assert!(test_command(command, message).is_failure());
     }

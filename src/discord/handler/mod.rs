@@ -1,8 +1,8 @@
-mod discord;
-mod minecraft;
+mod incoming;
+mod outgoing;
 
-pub use discord::DiscordHandler as Discord;
-pub use minecraft::MinecraftHandler as Minecraft;
+pub use incoming::DiscordHandler as Discord;
+pub use outgoing::MinecraftHandler as Minecraft;
 
 use super::reactions;
 use lazy_regex::regex_replace_all;

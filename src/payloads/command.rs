@@ -1,4 +1,5 @@
 use crate::{
+    bridge::Chat,
     discord::TimeUnit,
     sanitizer::{CleanString, ValidIGN},
 };
@@ -28,7 +29,7 @@ impl CommandPayload {
 
 #[derive(Debug, Clone)]
 pub enum MinecraftCommand {
-    ChatMessage(CleanString),
+    ChatMessage(CleanString, CleanString, Chat),
     Mute(ValidIGN, u8, TimeUnit),
     Unmute(ValidIGN),
     Invite(ValidIGN),

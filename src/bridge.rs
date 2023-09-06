@@ -6,6 +6,7 @@ use crate::{
 use azalea::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
+use strum::EnumIs;
 use tokio::sync::mpsc;
 use twilight_gateway::Intents;
 
@@ -44,10 +45,19 @@ pub async fn run() -> errors::Result<()> {
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIs)]
 pub enum Chat {
     Guild,
     Officer,
+}
+
+impl Chat {
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            Chat::Guild => "gc",
+            Chat::Officer => "oc",
+        }
+    }
 }
 
 impl From<Chat> for u64 {

@@ -1,4 +1,4 @@
-use super::{CommandResponse, RunCommand, TimeUnit};
+use super::{RunCommand, SlashCommandResponse, TimeUnit};
 use crate::{
     minecraft,
     payloads::{
@@ -35,16 +35,18 @@ fn permissions() -> Permissions {
 }
 
 impl RunCommand for MuteCommand {
-    fn get_command(self) -> crate::Result<MinecraftCommand, CommandResponse> {
+    type Response = SlashCommandResponse;
+
+    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
-            return Err(CommandResponse::Failure(format!(
+            return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
                 ign = self.player
             )));
         };
 
         let Ok(duration) = u8::try_from(self.duration) else {
-            return Err(CommandResponse::Failure(format!(
+            return Err(SlashCommandResponse::Failure(format!(
                 "`{duration}` is not a valid mute duration",
                 duration = self.duration
             )));
@@ -53,8 +55,8 @@ impl RunCommand for MuteCommand {
         Ok(MinecraftCommand::Mute(player, duration, self.unit))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<CommandResponse> {
-        use CommandResponse::*;
+    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+        use SlashCommandResponse::*;
 
         let MinecraftCommand::Mute(player, _, _) = command else {
             unreachable!("Expected Minecraft::Mute, got {command:?}");
@@ -99,12 +101,14 @@ impl RunCommand for MuteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::NotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
                     if player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
-                Response::NoPermission => Some(Failure(Response::NoPermission.to_string())),
+                Response::NoPermission | Response::BotNotInGuild => {
+                    Some(Failure(response.to_string()))
+                }
                 _ => None,
             },
             _ => None,
@@ -134,6 +138,7 @@ mod tests {
     #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "Can't find a player by the name of 'neyoa'" ; "Not found")]
     #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You do not have permission to use this command!" ; "No permission")]
     #[test_case(MuteCommand { player: "neytwoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You cannot mute yourself from the guild!" ; "Self mute")]
+    #[test_case(MuteCommand { player: "neyoa".to_string(), duration: 30, unit: TimeUnit::Day }, "You must be in a guild to use this command!" ; "Bot not in a guild")]
     fn failures(command: MuteCommand, message: &'static str) {
         assert!(test_command(command, message).is_failure());
     }
