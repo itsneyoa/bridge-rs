@@ -3,16 +3,15 @@ mod message_ext;
 
 use super::{
     autocomplete,
-    commands::{Feedback, GuildCommand, RunCommand, SlashCommandResponse},
+    commands::{Feedback, RunCommand},
     reactions, Discord,
 };
-use crate::{bridge::Chat, config};
+use crate::{bridge::Chat, config, discord::commands::SlashCommandResponse};
 use chat_command::{ChatCommand, ChatCommandResponse};
 use message_ext::MessageExt;
 use std::{ops::Deref, sync::Arc};
 use tokio::sync::Mutex;
 use twilight_gateway::Event;
-use twilight_interactions::command::{CommandModel, CreateCommand};
 use twilight_model::{
     application::{
         command::{CommandOptionChoice, CommandOptionChoiceValue, CommandOptionType},
@@ -29,7 +28,7 @@ use twilight_webhook::cache::PermissionsSource;
 
 pub struct DiscordHandler {
     discord: Arc<Discord>,
-    feedback: Arc<Mutex<Feedback>>,
+    pub feedback: Arc<Mutex<Feedback>>,
 }
 
 impl Deref for DiscordHandler {
@@ -131,7 +130,7 @@ impl DiscordHandler {
                 command
                     .get_command()
                     .expect("ChatCommand.get_command() should always return Ok(_)"),
-                ChatCommand::check_event,
+                |event| command.check_event(event),
             )
             .await
         {
@@ -184,69 +183,66 @@ impl DiscordHandler {
         data: CommandData,
     ) -> Result<(), twilight_http::Error> {
         let client = self.http.interaction(interaction.application_id);
+        let name = data.name.clone();
 
-        match data.name.as_str() {
-            GuildCommand::NAME => {
-                let command =
-                    GuildCommand::from_interaction(data.into()).expect("Failed to parse command");
+        let Some(command) = super::commands::get_run_command(data) else {
+            log::warn!("Unknown command executed: {name}");
 
-                // Defer our response
-                client
-                    .create_response(
-                        interaction.id,
-                        &interaction.token,
-                        &InteractionResponse {
-                            kind: InteractionResponseType::DeferredChannelMessageWithSource,
-                            data: None,
-                        },
-                    )
-                    .await?;
+            let embed = EmbedBuilder::new()
+                .description("Command not found")
+                .color(crate::discord::colours::RED)
+                .build();
 
-                let embed = match command.get_command_or_response() {
-                    Ok((command, matcher)) => self
-                        .feedback
-                        .lock()
-                        .await
-                        .execute(command, matcher)
-                        .await
-                        .unwrap_or_else(|| SlashCommandResponse::Timeout)
-                        .into(),
+            return client
+                .create_response(
+                    interaction.id,
+                    &interaction.token,
+                    &InteractionResponse {
+                        kind: InteractionResponseType::ChannelMessageWithSource,
+                        data: Some(
+                            InteractionResponseDataBuilder::new()
+                                .embeds([embed])
+                                .build(),
+                        ),
+                    },
+                )
+                .await
+                .map(|_| ());
+        };
 
-                    Err(response) => response.into(),
-                };
+        let command = command.expect("Failed to parse command");
 
-                client
-                    .update_response(&interaction.token)
-                    .embeds(Some(&[embed]))
-                    .expect("Invalid embeds in response")
-                    .await
-                    .map(|_| ())
-            }
-            _ => {
-                log::warn!("Unknown command executed: {cmd}", cmd = data.name);
+        // Defer our response
+        client
+            .create_response(
+                interaction.id,
+                &interaction.token,
+                &InteractionResponse {
+                    kind: InteractionResponseType::DeferredChannelMessageWithSource,
+                    data: None,
+                },
+            )
+            .await?;
 
-                let embed = EmbedBuilder::new()
-                    .description("Command not found")
-                    .color(crate::discord::colours::RED)
-                    .build();
+        let embed = match command.get_command() {
+            Ok(minecraft_command) => self
+                .feedback
+                .lock()
+                .await
+                .execute(minecraft_command, |event| command.check_event(event))
+                .await
+                .unwrap_or_else(|| SlashCommandResponse::Timeout)
+                .into(),
 
-                client
-                    .create_response(
-                        interaction.id,
-                        &interaction.token,
-                        &InteractionResponse {
-                            kind: InteractionResponseType::ChannelMessageWithSource,
-                            data: Some(
-                                InteractionResponseDataBuilder::new()
-                                    .embeds([embed])
-                                    .build(),
-                            ),
-                        },
-                    )
-                    .await
-                    .map(|_| ())
-            }
-        }
+            Err(response) => response.into(),
+        };
+
+        client
+            .update_response(&interaction.token)
+            .embeds(Some(&[embed]))
+            .expect("Invalid embeds in response")
+            .await
+            .map(|_| ())
     }
 
     async fn handle_autocomplete_interaction(

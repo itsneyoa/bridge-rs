@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse};
+use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
@@ -34,7 +34,7 @@ fn permissions() -> Permissions {
 impl RunCommand for SetRankCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -62,19 +62,15 @@ impl RunCommand for SetRankCommand {
         Ok(MinecraftCommand::SetRank(player, rank))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::SetRank(player, rank) = command else {
-            unreachable!("Expected Minecraft::SetRank, got {command:?}");
-        };
 
         match event {
             ChatEvent::GuildEvent(GuildEvent::Promotion {
                 ref member,
                 old_rank,
                 new_rank,
-            }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
+            }) if self.player.eq_ignore_ascii_case(member) => Some(Success(format!(
                 "`{member}` has been promoted from `{old_rank}` to `{new_rank}`"
             ))),
 
@@ -82,7 +78,7 @@ impl RunCommand for SetRankCommand {
                 ref member,
                 old_rank,
                 new_rank,
-            }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
+            }) if self.player.eq_ignore_ascii_case(member) => Some(Success(format!(
                 "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
             ))),
 
@@ -94,7 +90,11 @@ impl RunCommand for SetRankCommand {
                 }
 
                 if message == "They already have that rank!" {
-                    return Some(Failure(format!("`{player}` already has rank `{rank}`")));
+                    return Some(Failure(format!(
+                        "`{player}` already has rank `{rank}`",
+                        player = self.player,
+                        rank = self.rank
+                    )));
                 }
 
                 if message == "You can only demote up to your own rank!"
@@ -108,7 +108,7 @@ impl RunCommand for SetRankCommand {
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                    if player.eq_ignore_ascii_case(user) =>
+                    if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
@@ -125,7 +125,7 @@ impl RunCommand for SetRankCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

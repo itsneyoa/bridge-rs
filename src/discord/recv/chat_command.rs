@@ -22,7 +22,11 @@ pub struct ChatCommand {
 }
 
 impl ChatCommand {
-    pub fn new(author: String, message: String, chat: Chat) -> Result<(Self, Vec<Reaction>), Reaction> {
+    pub fn new(
+        author: String,
+        message: String,
+        chat: Chat,
+    ) -> Result<(Self, Vec<Reaction>), Reaction> {
         let clean_author = CleanString::from(author.clone());
         let clean_message = CleanString::from(message.clone());
 
@@ -65,33 +69,29 @@ pub enum ChatCommandResponse {
 impl RunCommand for ChatCommand {
     type Response = ChatCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, ChatCommandResponse> {
+    fn get_command(&self) -> Result<MinecraftCommand, ChatCommandResponse> {
         Ok(MinecraftCommand::ChatMessage(
-            self.author,
-            self.message,
+            self.author.clone(),
+            self.message.clone(),
             self.chat,
         ))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<ChatCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<ChatCommandResponse> {
         use ChatCommandResponse::*;
-
-        let MinecraftCommand::ChatMessage(author, content, dest_chat) = command else {
-            unreachable!("Expected Minecraft::Demote, got {command:?}");
-        };
 
         match event {
             ChatEvent::Message(Message {
-                author: ref msg_author,
-                content: ref msg_content,
+                ref author,
+                ref content,
                 ref chat,
-            }) if chat == dest_chat
+            }) if self.chat.eq(chat)
                 && minecraft::USERNAME
                     .wait()
                     .read()
-                    .eq_ignore_ascii_case(msg_author)
-                && msg_content.starts_with(author.as_str())
-                && msg_content.ends_with(content.as_str()) =>
+                    .eq_ignore_ascii_case(author)
+                && content.starts_with(self.author.as_str())
+                && content.ends_with(self.message.as_str()) =>
             {
                 Some(Success)
             }
@@ -108,7 +108,7 @@ impl RunCommand for ChatCommand {
                     return Some(Failure(reactions::Muted));
                 }
 
-                if message == "You don't have access to the officer chat!" && dest_chat.is_officer()
+                if message == "You don't have access to the officer chat!" && self.chat.is_officer()
                 {
                     return Some(Failure(reactions::NoPermission));
                 }

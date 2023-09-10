@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse, TimeUnit};
+use super::super::{RunCommand, SlashCommandResponse, TimeUnit};
 use crate::{
     minecraft,
     payloads::{
@@ -37,7 +37,7 @@ fn permissions() -> Permissions {
 impl RunCommand for MuteCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -55,12 +55,8 @@ impl RunCommand for MuteCommand {
         Ok(MinecraftCommand::Mute(player, duration, self.unit))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::Mute(player, _, _) = command else {
-            unreachable!("Expected Minecraft::Mute, got {command:?}");
-        };
 
         match event {
             ChatEvent::Moderation(Moderation::Mute {
@@ -69,7 +65,7 @@ impl RunCommand for MuteCommand {
                 unit,
                 by,
             }) if by == *minecraft::USERNAME.wait().read()
-                && player.eq_ignore_ascii_case(match member {
+                && self.player.eq_ignore_ascii_case(match member {
                     Some(ref member) => member,
                     None => "everyone",
                 }) =>
@@ -82,7 +78,7 @@ impl RunCommand for MuteCommand {
 
             ChatEvent::Unknown(message) => {
                 if message == "This player is already muted!" {
-                    return Some(Failure(format!("`{player}` is already muted")));
+                    return Some(Failure(format!("`{player}` is already muted", player = self.player)));
                 }
 
                 if message == "You cannot mute a guild member with a higher guild rank!"
@@ -102,7 +98,7 @@ impl RunCommand for MuteCommand {
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                    if player.eq_ignore_ascii_case(user) =>
+                    if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
@@ -118,7 +114,7 @@ impl RunCommand for MuteCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

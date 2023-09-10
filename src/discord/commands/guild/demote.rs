@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse};
+use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
@@ -30,7 +30,7 @@ fn permissions() -> Permissions {
 impl RunCommand for DemoteCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -41,19 +41,15 @@ impl RunCommand for DemoteCommand {
         Ok(MinecraftCommand::Demote(player))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::Demote(player) = command else {
-            unreachable!("Expected Minecraft::Demote, got {command:?}");
-        };
 
         match event {
             ChatEvent::GuildEvent(GuildEvent::Demotion {
                 ref member,
                 old_rank,
                 new_rank,
-            }) if player.eq_ignore_ascii_case(member) => Some(Success(format!(
+            }) if self.player.eq_ignore_ascii_case(member) => Some(Success(format!(
                 "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
             ))),
 
@@ -62,7 +58,7 @@ impl RunCommand for DemoteCommand {
                     r#"^(?:\[.+?\] )?(\w+) is already the lowest rank you've created!$"#,
                     message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Failure(format!("`{user}` is already the lowest rank")));
                     }
                 }
@@ -72,7 +68,7 @@ impl RunCommand for DemoteCommand {
                         r#"(?:\[.+?\] )?(\w+) is the guild master so can't be demoted!"#,
                         message
                     )
-                    .is_some_and(|(_, user)| player.eq_ignore_ascii_case(user))
+                    .is_some_and(|(_, user)| self.player.eq_ignore_ascii_case(user))
                 {
                     return Some(Failure(Response::NoPermission.to_string()));
                 }
@@ -82,7 +78,7 @@ impl RunCommand for DemoteCommand {
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                    if player.eq_ignore_ascii_case(user) =>
+                    if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
@@ -99,7 +95,7 @@ impl RunCommand for DemoteCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

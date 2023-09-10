@@ -1,92 +1,28 @@
-mod demote;
+mod guild;
 mod help;
-mod invite;
-mod kick;
-mod mute;
-mod promote;
-mod setrank;
-mod unmute;
+
+pub use {guild::GuildCommand, help::HelpCommand};
 
 use super::colours;
-use crate::{
-    payloads::{
-        command::{CommandPayload, MinecraftCommand},
-        events::ChatEvent,
-    },
-    Result,
+use crate::payloads::{
+    command::{CommandPayload, MinecraftCommand},
+    events::ChatEvent,
 };
+use macros::commands;
 use std::time::Duration;
 use strum::EnumIs;
 use tokio::sync::{mpsc, oneshot};
-use twilight_interactions::command::{CommandModel, CommandOption, CreateCommand, CreateOption};
-use twilight_model::channel::message::Embed;
+use twilight_interactions::command::{CommandOption, CreateCommand, CreateOption};
+use twilight_model::{
+    application::{command::Command, interaction::application_command::CommandData},
+    channel::message::Embed,
+};
 use twilight_util::builder::embed::EmbedBuilder;
 
-#[derive(CommandModel, CreateCommand)]
-#[command(name = "guild", desc = "Guild commands")]
-pub enum GuildCommand {
-    #[command(name = "help")]
-    Help(help::HelpCommand),
+// Add new commands here!
+commands!(GuildCommand, HelpCommand);
 
-    #[command(name = "mute")]
-    Mute(mute::MuteCommand),
-
-    #[command(name = "unmute")]
-    Unmute(unmute::UnmuteCommand),
-
-    #[command(name = "invite")]
-    Invite(invite::InviteCommand),
-
-    #[command(name = "kick")]
-    Kick(kick::KickCommand),
-
-    #[command(name = "promote")]
-    Promote(promote::PromoteCommand),
-
-    #[command(name = "demote")]
-    Demote(demote::DemoteCommand),
-
-    #[command(name = "setrank")]
-    SetRank(setrank::SetRankCommand),
-}
-
-type EventChecker = fn(&MinecraftCommand, ChatEvent) -> Option<SlashCommandResponse>;
-
-impl GuildCommand {
-    pub fn get_command_or_response(
-        self,
-    ) -> Result<(MinecraftCommand, EventChecker), SlashCommandResponse> {
-        let checker = self.get_event_checker();
-
-        let command = match self {
-            GuildCommand::Help(command) => command.get_command(),
-            GuildCommand::Mute(command) => command.get_command(),
-            GuildCommand::Unmute(command) => command.get_command(),
-            GuildCommand::Invite(command) => command.get_command(),
-            GuildCommand::Kick(command) => command.get_command(),
-            GuildCommand::Promote(command) => command.get_command(),
-            GuildCommand::Demote(command) => command.get_command(),
-            GuildCommand::SetRank(command) => command.get_command(),
-        };
-
-        command.map(|command| (command, checker))
-    }
-
-    fn get_event_checker(&self) -> EventChecker {
-        match self {
-            GuildCommand::Help(_) => help::HelpCommand::check_event,
-            GuildCommand::Mute(_) => mute::MuteCommand::check_event,
-            GuildCommand::Unmute(_) => unmute::UnmuteCommand::check_event,
-            GuildCommand::Invite(_) => invite::InviteCommand::check_event,
-            GuildCommand::Kick(_) => kick::KickCommand::check_event,
-            GuildCommand::Promote(_) => promote::PromoteCommand::check_event,
-            GuildCommand::Demote(_) => demote::DemoteCommand::check_event,
-            GuildCommand::SetRank(_) => setrank::SetRankCommand::check_event,
-        }
-    }
-}
-
-pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
+pub async fn register_commands(http: &twilight_http::Client) -> crate::Result<()> {
     let application_id = {
         let response = http.current_user_application().await?;
         response
@@ -98,7 +34,7 @@ pub async fn register_commands(http: &twilight_http::Client) -> Result<()> {
 
     Ok(http
         .interaction(application_id)
-        .set_global_commands(&[GuildCommand::create_command().into()])
+        .set_global_commands(&get_commands())
         .await
         .map(|_| ())?)
 }
@@ -130,16 +66,16 @@ impl From<SlashCommandResponse> for Embed {
     }
 }
 
-pub trait RunCommand {
+pub trait RunCommand: Send + Sync + 'static {
     /// The type of response that the command returns
-    type Response;
+    type Response: Send + Sync + 'static;
 
     /// Get the command that will be sent to Minecraft, or the response if the command is invalid
-    fn get_command(self) -> Result<MinecraftCommand, Self::Response>;
+    fn get_command(&self) -> Result<MinecraftCommand, Self::Response>;
 
     /// Check if the event is a response to the command, and return the response if it is
     // TODO: Allow some events to consume multiple responses (needed for /g online, /g list, etc. and also /execute for better feedback)
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<Self::Response>;
+    fn check_event(&self, event: ChatEvent) -> Option<Self::Response>;
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]
@@ -172,7 +108,7 @@ pub struct Feedback {
 impl Feedback {
     pub async fn execute<F, R>(&mut self, command: MinecraftCommand, f: F) -> Option<R>
     where
-        F: Fn(&MinecraftCommand, ChatEvent) -> Option<R>,
+        F: Fn(ChatEvent) -> Option<R>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
@@ -188,7 +124,7 @@ impl Feedback {
             biased;
             result = async {
                 while let Ok(payload) = self.rx.activate_cloned().recv().await {
-                    if let Some(result) = f(&command,payload) {
+                    if let Some(result) = f(payload) {
                         return result;
                     }
                 }
@@ -202,20 +138,46 @@ impl Feedback {
     }
 }
 
+mod macros {
+    /// Generate the `get_commands` and `get_run_command` functions for the given commands
+    macro_rules! commands {
+        ($($cmd:ty),*) => {
+            /// Get the list of commands
+            #[inline]
+            fn get_commands() -> Vec<Command> {
+                vec![$(<$cmd>::create_command().into()),*]
+            }
+
+            /// Get the command that matches the given data
+            pub fn get_run_command(data: CommandData) -> Option<Result<Box<dyn RunCommand<Response = SlashCommandResponse>>, twilight_interactions::error::ParseError>> {
+                use twilight_interactions::command::CommandModel;
+
+                match data.name.as_str() {
+                    $(<$cmd>::NAME => Some(<$cmd>::from_interaction(data.into()).map(|cmd| Box::new(cmd) as Box<dyn RunCommand<Response = SlashCommandResponse>>)),)*
+                    _ => None,
+                }
+            }
+        };
+    }
+
+    pub(super) use commands;
+}
+
 #[cfg(test)]
 pub mod testing {
     use super::*;
     use crate::minecraft::USERNAME;
     use parking_lot::RwLock;
 
-    pub fn test_command<R, C: RunCommand<Response = R>>(command: C, message: &'static str) -> R {
+    pub fn test_command<R>(command: impl RunCommand<Response = R>, message: &'static str) -> R {
         USERNAME.set(RwLock::new("neytwoa".to_string())).ok();
 
-        let command = match command.get_command() {
-            Ok(command) => command,
-            Err(response) => return response,
-        };
+        if let Err(response) = command.get_command() {
+            return response;
+        }
 
-        C::check_event(&command, ChatEvent::from(message)).expect("No response was returned")
+        command
+            .check_event(ChatEvent::from(message))
+            .expect("No response was returned")
     }
 }

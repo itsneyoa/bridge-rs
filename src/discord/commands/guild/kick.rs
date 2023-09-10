@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse};
+use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     minecraft,
     payloads::{
@@ -34,7 +34,7 @@ fn permissions() -> Permissions {
 impl RunCommand for KickCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -42,8 +42,8 @@ impl RunCommand for KickCommand {
             )));
         };
 
-        let reason = if let Some(reason) = self.reason {
-            let clean = CleanString::from(reason);
+        let reason = if let Some(ref reason) = self.reason {
+            let clean = CleanString::from(reason.clone());
 
             if clean.is_empty() {
                 None
@@ -58,16 +58,12 @@ impl RunCommand for KickCommand {
         Ok(MinecraftCommand::Kick(player, reason))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::Kick(player, _) = command else {
-            unreachable!("Expected Minecraft::Kick, got {command:?}");
-        };
 
         match event {
             ChatEvent::GuildEvent(GuildEvent::Kick { ref member, by })
-                if player.eq_ignore_ascii_case(member)
+                if self.player.eq_ignore_ascii_case(member)
                     && by == *minecraft::USERNAME.wait().read() =>
             {
                 Some(Success(format!(
@@ -87,7 +83,7 @@ impl RunCommand for KickCommand {
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                    if player.eq_ignore_ascii_case(user) =>
+                    if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
@@ -103,7 +99,7 @@ impl RunCommand for KickCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse};
+use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
@@ -31,7 +31,7 @@ fn permissions() -> Permissions {
 impl RunCommand for InviteCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -42,12 +42,8 @@ impl RunCommand for InviteCommand {
         Ok(MinecraftCommand::Invite(player))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::Invite(player) = command else {
-            unreachable!("Expected Minecraft::Invite, got {command:?}");
-        };
 
         match event {
             ChatEvent::Unknown(message) => {
@@ -55,7 +51,7 @@ impl RunCommand for InviteCommand {
                     r#"^You invited (?:\[.+?\] )?(\w+) to your guild. They have 5 minutes to accept\.$"#,
                     &message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Success(format!("`{user}` has been invited to the guild")));
                     }
                 }
@@ -64,7 +60,7 @@ impl RunCommand for InviteCommand {
                     r#"^You sent an offline invite to (?:\[.+?\] )?(\w+)! They will have 5 minutes to accept once they come online!$"#,
                     &message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Success(format!(
                             "`{user}` has been offline invited to the guild"
                         )));
@@ -75,7 +71,7 @@ impl RunCommand for InviteCommand {
                     r#"^(?:\[.+?\] )?(\w+) is already in another guild!$"#,
                     &message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Failure(format!("`{user}` is already in another guild")));
                     }
                 }
@@ -84,7 +80,7 @@ impl RunCommand for InviteCommand {
                     r#"^You've already invited (?:\[.+?\] )?(\w+) to your guild. Wait for them to accept!$"#,
                     &message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Failure(format!(
                             "`{user}` has already been invited to the guild"
                         )));
@@ -95,7 +91,7 @@ impl RunCommand for InviteCommand {
                     r#"^(?:\[.+?\] )?(\w+) is already in your guild!$"#,
                     &message
                 ) {
-                    if player.eq_ignore_ascii_case(user) {
+                    if self.player.eq_ignore_ascii_case(user) {
                         return Some(Failure(format!("`{user}` is already in the guild")));
                     }
                 }
@@ -116,7 +112,7 @@ impl RunCommand for InviteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotFound(ref user) if player.eq_ignore_ascii_case(user) => {
+                Response::PlayerNotFound(ref user) if self.player.eq_ignore_ascii_case(user) => {
                     Some(Failure(response.to_string()))
                 }
                 Response::NoPermission | Response::BotNotInGuild => {
@@ -132,7 +128,7 @@ impl RunCommand for InviteCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

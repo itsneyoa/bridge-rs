@@ -1,4 +1,4 @@
-use super::{RunCommand, SlashCommandResponse};
+use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     minecraft,
     payloads::{
@@ -30,7 +30,7 @@ fn permissions() -> Permissions {
 impl RunCommand for UnmuteCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> crate::Result<MinecraftCommand, SlashCommandResponse> {
         let Ok(player) = ValidIGN::try_from(self.player.as_str()) else {
             return Err(SlashCommandResponse::Failure(format!(
                 "`{ign}` is not a valid IGN",
@@ -41,17 +41,13 @@ impl RunCommand for UnmuteCommand {
         Ok(MinecraftCommand::Unmute(player))
     }
 
-    fn check_event(command: &MinecraftCommand, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
-
-        let MinecraftCommand::Unmute(player) = command else {
-            unreachable!("Expected Minecraft::Unmute, got {command:?}");
-        };
 
         match event {
             ChatEvent::Moderation(Moderation::Unmute { member, by })
                 if by == *minecraft::USERNAME.wait().read()
-                    && player.eq_ignore_ascii_case(match member {
+                    && self.player.eq_ignore_ascii_case(match member {
                         Some(ref member) => member,
                         None => "everyone",
                     }) =>
@@ -64,10 +60,15 @@ impl RunCommand for UnmuteCommand {
 
             ChatEvent::Unknown(message) => {
                 if message == "This player is not muted!" {
-                    return Some(Failure(format!("`{player}` is not muted", player = player)));
+                    return Some(Failure(format!(
+                        "`{player}` is not muted",
+                        player = self.player
+                    )));
                 }
 
-                if message == "The guild is not muted!" && player.eq_ignore_ascii_case("everyone") {
+                if message == "The guild is not muted!"
+                    && self.player.eq_ignore_ascii_case("everyone")
+                {
                     return Some(Failure("`Guild Chat` is not muted".to_string()));
                 }
 
@@ -76,7 +77,7 @@ impl RunCommand for UnmuteCommand {
 
             ChatEvent::CommandResponse(response) => match response {
                 Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
-                    if player.eq_ignore_ascii_case(user) =>
+                    if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))
                 }
@@ -93,7 +94,7 @@ impl RunCommand for UnmuteCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
+    use super::super::super::testing::test_command;
     use super::*;
     use test_case::test_case;
 

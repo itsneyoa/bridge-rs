@@ -25,7 +25,7 @@ fn permissions() -> Permissions {
 impl RunCommand for HelpCommand {
     type Response = SlashCommandResponse;
 
-    fn get_command(self) -> Result<MinecraftCommand, SlashCommandResponse> {
+    fn get_command(&self) -> Result<MinecraftCommand, SlashCommandResponse> {
         let help_embed = EmbedBuilder::new()
             .title("Bridge Help")
             .field(EmbedField {
@@ -36,7 +36,7 @@ impl RunCommand for HelpCommand {
                     .join("\n"),
                 inline: false,
             })
-            // TODO: If minecraft commands are ever added, they can go here
+            // If minecraft commands are ever added, they can go here
             .field(EmbedField {
                 name: "Info".to_string(),
                 value: [
@@ -57,7 +57,7 @@ impl RunCommand for HelpCommand {
         Err(SlashCommandResponse::Embed(Box::new(help_embed)))
     }
 
-    fn check_event(_: &MinecraftCommand, _: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, _: ChatEvent) -> Option<SlashCommandResponse> {
         unreachable!(
             "Help command should always return Err(CommandResponse::Embed(embed)) so `check_event` is never called"
         )
