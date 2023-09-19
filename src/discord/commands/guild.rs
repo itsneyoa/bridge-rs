@@ -7,7 +7,7 @@ mod setrank;
 mod unmute;
 
 use super::{RunCommand, SlashCommandResponse};
-use crate::payloads::{command::MinecraftCommand, events::ChatEvent};
+use crate::payloads::{command::MinecraftCommand, events::RawChatEvent};
 use twilight_interactions::command::{CommandModel, CreateCommand};
 
 #[derive(CommandModel, CreateCommand)]
@@ -35,30 +35,28 @@ pub enum GuildCommand {
     SetRank(setrank::SetRankCommand),
 }
 
+impl GuildCommand {
+    fn as_run_command(&self) -> &dyn RunCommand<Response = SlashCommandResponse> {
+        match self {
+            Self::Mute(command) => command,
+            Self::Unmute(command) => command,
+            Self::Invite(command) => command,
+            Self::Kick(command) => command,
+            Self::Promote(command) => command,
+            Self::Demote(command) => command,
+            Self::SetRank(command) => command,
+        }
+    }
+}
+
 impl RunCommand for GuildCommand {
     type Response = SlashCommandResponse;
 
     fn get_command(&self) -> Result<MinecraftCommand, Self::Response> {
-        match self {
-            Self::Mute(command) => command.get_command(),
-            Self::Unmute(command) => command.get_command(),
-            Self::Invite(command) => command.get_command(),
-            Self::Kick(command) => command.get_command(),
-            Self::Promote(command) => command.get_command(),
-            Self::Demote(command) => command.get_command(),
-            Self::SetRank(command) => command.get_command(),
-        }
+        self.as_run_command().get_command()
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<Self::Response> {
-        match self {
-            GuildCommand::Mute(command) => command.check_event(event),
-            GuildCommand::Unmute(command) => command.check_event(event),
-            GuildCommand::Invite(command) => command.check_event(event),
-            GuildCommand::Kick(command) => command.check_event(event),
-            GuildCommand::Promote(command) => command.check_event(event),
-            GuildCommand::Demote(command) => command.check_event(event),
-            GuildCommand::SetRank(command) => command.check_event(event),
-        }
+    fn check_event(&self, event: RawChatEvent) -> Option<Self::Response> {
+        self.as_run_command().check_event(event)
     }
 }

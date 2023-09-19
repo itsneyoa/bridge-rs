@@ -3,7 +3,7 @@ use crate::{
     minecraft,
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, Moderation, Response},
+        events::{ChatEvent, Moderation, RawChatEvent, Response},
     },
     sanitizer::ValidIGN,
 };
@@ -55,10 +55,10 @@ impl RunCommand for MuteCommand {
         Ok(MinecraftCommand::Mute(player, duration, self.unit))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::Moderation(Moderation::Mute {
                 member,
                 length,
@@ -66,7 +66,7 @@ impl RunCommand for MuteCommand {
                 by,
             }) if by == *minecraft::USERNAME.wait().read()
                 && self.player.eq_ignore_ascii_case(match member {
-                    Some(ref member) => member,
+                    Some(member) => member,
                     None => "everyone",
                 }) =>
             {
@@ -78,7 +78,10 @@ impl RunCommand for MuteCommand {
 
             ChatEvent::Unknown(message) => {
                 if message == "This player is already muted!" {
-                    return Some(Failure(format!("`{player}` is already muted", player = self.player)));
+                    return Some(Failure(format!(
+                        "`{player}` is already muted",
+                        player = self.player
+                    )));
                 }
 
                 if message == "You cannot mute a guild member with a higher guild rank!"
@@ -97,7 +100,7 @@ impl RunCommand for MuteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(user) | Response::PlayerNotFound(user)
                     if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))

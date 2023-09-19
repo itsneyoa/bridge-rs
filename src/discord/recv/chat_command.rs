@@ -7,7 +7,7 @@ use crate::{
     minecraft,
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, Message, Response},
+        events::{ChatEvent, Message, RawChatEvent, Response},
     },
     sanitizer::CleanString,
 };
@@ -77,15 +77,15 @@ impl RunCommand for ChatCommand {
         ))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<ChatCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<ChatCommandResponse> {
         use ChatCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::Message(Message {
-                ref author,
-                ref content,
-                ref chat,
-            }) if self.chat.eq(chat)
+                author,
+                content,
+                chat,
+            }) if self.chat == chat
                 && minecraft::USERNAME
                     .wait()
                     .read()

@@ -2,7 +2,7 @@ use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, Response},
+        events::{ChatEvent, RawChatEvent, Response},
     },
     sanitizer::ValidIGN,
 };
@@ -42,10 +42,10 @@ impl RunCommand for InviteCommand {
         Ok(MinecraftCommand::Invite(player))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::Unknown(message) => {
                 if let Some((_, user)) = regex_captures!(
                     r#"^You invited (?:\[.+?\] )?(\w+) to your guild. They have 5 minutes to accept\.$"#,
@@ -112,7 +112,7 @@ impl RunCommand for InviteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotFound(ref user) if self.player.eq_ignore_ascii_case(user) => {
+                Response::PlayerNotFound(user) if self.player.eq_ignore_ascii_case(user) => {
                     Some(Failure(response.to_string()))
                 }
                 Response::NoPermission | Response::BotNotInGuild => {

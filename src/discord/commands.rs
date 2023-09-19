@@ -1,12 +1,13 @@
+mod execute;
 mod guild;
 mod help;
 
-pub use {guild::GuildCommand, help::HelpCommand};
+pub use {execute::ExecuteCommand, guild::GuildCommand, help::HelpCommand};
 
 use super::colours;
 use crate::payloads::{
     command::{CommandPayload, MinecraftCommand},
-    events::ChatEvent,
+    events::RawChatEvent,
 };
 use macros::commands;
 use std::time::Duration;
@@ -20,7 +21,7 @@ use twilight_model::{
 use twilight_util::builder::embed::EmbedBuilder;
 
 // Add new commands here!
-commands!(GuildCommand, HelpCommand);
+commands!(GuildCommand, HelpCommand, ExecuteCommand);
 
 pub async fn register_commands(http: &twilight_http::Client) -> crate::Result<()> {
     let application_id = {
@@ -75,7 +76,9 @@ pub trait RunCommand: Send + Sync + 'static {
 
     /// Check if the event is a response to the command, and return the response if it is
     // TODO: Allow some events to consume multiple responses (needed for /g online, /g list, etc. and also /execute for better feedback)
-    fn check_event(&self, event: ChatEvent) -> Option<Self::Response>;
+    fn check_event(&self, event: RawChatEvent) -> Option<Self::Response> {
+        unreachable!("Command should never call `check_event` ({event:?})")
+    }
 }
 
 #[derive(CommandOption, CreateOption, Debug, Clone, Copy)]
@@ -102,13 +105,13 @@ const TIMEOUT_DELAY: Duration = Duration::from_secs(10);
 
 pub struct Feedback {
     pub tx: mpsc::UnboundedSender<CommandPayload>,
-    pub rx: async_broadcast::InactiveReceiver<ChatEvent>,
+    pub rx: async_broadcast::InactiveReceiver<RawChatEvent>,
 }
 
 impl Feedback {
     pub async fn execute<F, R>(&mut self, command: MinecraftCommand, f: F) -> Option<R>
     where
-        F: Fn(ChatEvent) -> Option<R>,
+        F: Fn(RawChatEvent) -> Option<R>,
     {
         let (verify_tx, verify_rx) = oneshot::channel();
 
@@ -177,7 +180,7 @@ pub mod testing {
         }
 
         command
-            .check_event(ChatEvent::from(message))
+            .check_event(RawChatEvent(message.to_string()))
             .expect("No response was returned")
     }
 }

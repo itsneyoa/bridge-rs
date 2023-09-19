@@ -2,7 +2,7 @@ use super::{RunCommand, SlashCommandResponse};
 use crate::{
     config,
     discord::{avatar_url, colours, reactions::Reaction},
-    payloads::{command::MinecraftCommand, events::ChatEvent},
+    payloads::command::MinecraftCommand,
 };
 use strum::IntoEnumIterator;
 use twilight_interactions::command::{CommandModel, CreateCommand};
@@ -55,12 +55,6 @@ impl RunCommand for HelpCommand {
             .build();
 
         Err(SlashCommandResponse::Embed(Box::new(help_embed)))
-    }
-
-    fn check_event(&self, _: ChatEvent) -> Option<SlashCommandResponse> {
-        unreachable!(
-            "Help command should always return Err(CommandResponse::Embed(embed)) so `check_event` is never called"
-        )
     }
 }
 

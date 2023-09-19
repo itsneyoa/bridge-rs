@@ -1,5 +1,6 @@
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_captures;
+use std::fmt::Display;
 
 /// A guild member joined, left, was kicked, promoted, or demoted.
 ///
@@ -9,42 +10,42 @@ use lazy_regex::regex_captures;
 /// - `neyoa was kicked from the guild by neytwoa!`
 /// - `neyoa was promoted from Member to Staff`
 /// - `neyoa was demoted from Staff to Member`
-#[derive(Event, Debug, Clone)]
-pub enum GuildEvent {
-    Join(String),
-    Leave(String),
+#[derive(Event, Debug)]
+pub enum GuildEvent<'a> {
+    Join(&'a str),
+    Leave(&'a str),
     Kick {
-        member: String,
-        by: String,
+        member: &'a str,
+        by: &'a str,
     },
     Promotion {
-        member: String,
-        old_rank: String,
-        new_rank: String,
+        member: &'a str,
+        old_rank: &'a str,
+        new_rank: &'a str,
     },
     Demotion {
-        member: String,
-        old_rank: String,
-        new_rank: String,
+        member: &'a str,
+        old_rank: &'a str,
+        new_rank: &'a str,
     },
 }
 
-impl TryFrom<&str> for GuildEvent {
+impl<'a> TryFrom<&'a str> for GuildEvent<'a> {
     type Error = ();
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         // neyoa joined the guild.
         if let Some((_, user)) =
             regex_captures!(r#"^(?:\[[\w+]+\] )?(\w+) joined the guild!$"#, value)
         {
-            return Ok(Self::Join(user.to_string()));
+            return Ok(Self::Join(user));
         }
 
         // neyoa left the guild.
         if let Some((_, user)) =
             regex_captures!(r#"^(?:\[[\w+]+\] )?(\w+) left the guild!$"#, value)
         {
-            return Ok(Self::Leave(user.to_string()));
+            return Ok(Self::Leave(user));
         }
 
         // neyoa was kicked from the guild by neytwoa!
@@ -52,10 +53,7 @@ impl TryFrom<&str> for GuildEvent {
             r#"^(?:\[[\w+]+\] )?(\w+) was kicked from the guild by (?:\[[\w+]+\] )?(\w+)!$"#,
             value
         ) {
-            return Ok(Self::Kick {
-                member: user.to_string(),
-                by: by.to_string(),
-            });
+            return Ok(Self::Kick { member: user, by });
         }
 
         // neyoa was promoted from Member to Staff
@@ -64,9 +62,9 @@ impl TryFrom<&str> for GuildEvent {
             value
         ) {
             return Ok(Self::Promotion {
-                member: user.to_string(),
-                old_rank: from.to_string(),
-                new_rank: to.to_string(),
+                member: user,
+                old_rank: from,
+                new_rank: to,
             });
         }
 
@@ -76,13 +74,33 @@ impl TryFrom<&str> for GuildEvent {
             value
         ) {
             return Ok(Self::Demotion {
-                member: user.to_string(),
-                old_rank: from.to_string(),
-                new_rank: to.to_string(),
+                member: user,
+                old_rank: from,
+                new_rank: to,
             });
         }
 
         Err(())
+    }
+}
+
+impl Display for GuildEvent<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GuildEvent::Join(member) => write!(f, "{member} joined the guild"),
+            GuildEvent::Leave(member) => write!(f, "{member} left the guild"),
+            GuildEvent::Kick { member, by } => write!(f, "{by} kicked {member} from the guild"),
+            GuildEvent::Promotion {
+                member,
+                old_rank,
+                new_rank,
+            } => write!(f, "{member} promoted from {old_rank} to {new_rank}"),
+            GuildEvent::Demotion {
+                member,
+                old_rank,
+                new_rank,
+            } => write!(f, "{member} demoted from {old_rank} to {new_rank}"),
+        }
     }
 }
 

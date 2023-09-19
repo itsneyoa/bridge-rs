@@ -3,7 +3,7 @@ use crate::{
     minecraft,
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, GuildEvent, Response},
+        events::{ChatEvent, GuildEvent, RawChatEvent, Response},
     },
     sanitizer::{CleanString, ValidIGN},
 };
@@ -58,10 +58,10 @@ impl RunCommand for KickCommand {
         Ok(MinecraftCommand::Kick(player, reason))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::GuildEvent(GuildEvent::Kick { ref member, by })
                 if self.player.eq_ignore_ascii_case(member)
                     && by == *minecraft::USERNAME.wait().read() =>
@@ -82,7 +82,7 @@ impl RunCommand for KickCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(user) | Response::PlayerNotFound(user)
                     if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))

@@ -2,7 +2,7 @@ use super::super::{RunCommand, SlashCommandResponse};
 use crate::{
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, GuildEvent, Response},
+        events::{ChatEvent, GuildEvent, RawChatEvent, Response},
     },
     sanitizer::{CleanString, ValidIGN},
 };
@@ -62,12 +62,12 @@ impl RunCommand for SetRankCommand {
         Ok(MinecraftCommand::SetRank(player, rank))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::GuildEvent(GuildEvent::Promotion {
-                ref member,
+                member,
                 old_rank,
                 new_rank,
             }) if self.player.eq_ignore_ascii_case(member) => Some(Success(format!(
@@ -75,14 +75,14 @@ impl RunCommand for SetRankCommand {
             ))),
 
             ChatEvent::GuildEvent(GuildEvent::Demotion {
-                ref member,
+                member,
                 old_rank,
                 new_rank,
             }) if self.player.eq_ignore_ascii_case(member) => Some(Success(format!(
                 "`{member}` has been demoted from `{old_rank}` to `{new_rank}`"
             ))),
 
-            ChatEvent::Unknown(ref message) => {
+            ChatEvent::Unknown(message) => {
                 if let Some((_, rank)) =
                     regex_captures!(r#"I couldn't find a rank by the name of '(.+)'!"#, message)
                 {
@@ -107,7 +107,7 @@ impl RunCommand for SetRankCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(user) | Response::PlayerNotFound(user)
                     if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))

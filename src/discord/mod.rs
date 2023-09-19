@@ -12,7 +12,7 @@ mod colours {
 }
 
 use crate::{
-    payloads::{command::CommandPayload, events::ChatEvent},
+    payloads::{command::CommandPayload, events::RawChatEvent},
     Result,
 };
 pub use commands::TimeUnit;
@@ -29,7 +29,7 @@ use twilight_webhook::cache::WebhooksCache;
 
 pub struct Discord {
     sender: mpsc::UnboundedSender<CommandPayload>,
-    receiver: async_broadcast::Receiver<ChatEvent>,
+    receiver: async_broadcast::Receiver<RawChatEvent>,
     shard: Option<Shard>,
     cache: InMemoryCache,
     webhook_cache: WebhooksCache,
@@ -42,7 +42,7 @@ impl Discord {
         intents: Intents,
         (sender, receiver): (
             mpsc::UnboundedSender<CommandPayload>,
-            async_broadcast::Receiver<ChatEvent>,
+            async_broadcast::Receiver<RawChatEvent>,
         ),
     ) -> Self {
         let shard_config = ShardConfig::builder(token.to_string(), intents)

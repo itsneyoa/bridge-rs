@@ -1,31 +1,32 @@
 use crate::bridge::Chat;
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_captures;
+use std::fmt::Display;
 
 /// A player sent a message in the guild or officer chat.
 ///
 /// # Examples
 /// - `Guild > neyoa: hi`
 /// - `Officer > neyoa: hi`
-#[derive(Event, Debug, Clone)]
-pub struct Message {
-    pub author: String,
-    pub content: String,
+#[derive(Event, Debug)]
+pub struct Message<'a> {
+    pub author: &'a str,
+    pub content: &'a str,
     pub chat: Chat,
 }
 
-impl TryFrom<&str> for Message {
+impl<'a> TryFrom<&'a str> for Message<'a> {
     type Error = ();
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         // Gulid > neyoa: hi
         if let Some((_, user, message)) = regex_captures!(
             r#"^Guild > (?:\[[\w+]+?\] )?(\w+)(?: \[\w+?\])?: (.+)$"#,
             value
         ) {
             return Ok(Self {
-                author: user.to_string(),
-                content: message.to_string(),
+                author: user,
+                content: message,
                 chat: Chat::Guild,
             });
         }
@@ -36,13 +37,24 @@ impl TryFrom<&str> for Message {
             value
         ) {
             return Ok(Self {
-                author: user.to_string(),
-                content: message.to_string(),
+                author: user,
+                content: message,
                 chat: Chat::Officer,
             });
         }
 
         Err(())
+    }
+}
+
+impl Display for Message<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{author}: {message}",
+            author = self.author,
+            message = self.content
+        )
     }
 }
 

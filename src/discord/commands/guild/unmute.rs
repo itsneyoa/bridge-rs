@@ -3,7 +3,7 @@ use crate::{
     minecraft,
     payloads::{
         command::MinecraftCommand,
-        events::{ChatEvent, Moderation, Response},
+        events::{ChatEvent, Moderation, RawChatEvent, Response},
     },
     sanitizer::ValidIGN,
 };
@@ -41,14 +41,14 @@ impl RunCommand for UnmuteCommand {
         Ok(MinecraftCommand::Unmute(player))
     }
 
-    fn check_event(&self, event: ChatEvent) -> Option<SlashCommandResponse> {
+    fn check_event(&self, event: RawChatEvent) -> Option<SlashCommandResponse> {
         use SlashCommandResponse::*;
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::Moderation(Moderation::Unmute { member, by })
                 if by == *minecraft::USERNAME.wait().read()
                     && self.player.eq_ignore_ascii_case(match member {
-                        Some(ref member) => member,
+                        Some(member) => member,
                         None => "everyone",
                     }) =>
             {
@@ -76,7 +76,7 @@ impl RunCommand for UnmuteCommand {
             }
 
             ChatEvent::CommandResponse(response) => match response {
-                Response::PlayerNotInGuild(ref user) | Response::PlayerNotFound(ref user)
+                Response::PlayerNotInGuild(user) | Response::PlayerNotFound(user)
                     if self.player.eq_ignore_ascii_case(user) =>
                 {
                     Some(Failure(response.to_string()))

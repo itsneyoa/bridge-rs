@@ -29,12 +29,22 @@ impl CommandPayload {
 
 #[derive(Debug, Clone)]
 pub enum MinecraftCommand {
+    /// A message to the guild or officer chat
     ChatMessage(CleanString, CleanString, Chat),
+    /// Mute a player or the guild chat
     Mute(ValidIGN, u8, TimeUnit),
+    /// Unmute a player or the guild chat
     Unmute(ValidIGN),
+    /// Invite a player to the guild
     Invite(ValidIGN),
+    /// Kick a player from the guild
     Kick(ValidIGN, CleanString),
+    /// Demote a player
     Demote(ValidIGN),
+    /// Promote a player
     Promote(ValidIGN),
+    /// Set a player's rank
     SetRank(ValidIGN, CleanString),
+    /// Execute a command
+    Execute(String),
 }

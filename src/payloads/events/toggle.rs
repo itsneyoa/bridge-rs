@@ -1,25 +1,26 @@
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_captures;
+use std::fmt::Display;
 
 /// A player connected to or disconnected from the server.
 ///
 /// # Examples
 /// - `Guild > neyoa joined.`
 /// - `Guild > neyoa left.`
-#[derive(Event, Debug, Clone)]
-pub struct Toggle {
-    pub member: String,
+#[derive(Event, Debug)]
+pub struct Toggle<'a> {
+    pub member: &'a str,
     pub online: bool,
 }
 
-impl TryFrom<&str> for Toggle {
+impl<'a> TryFrom<&'a str> for Toggle<'a> {
     type Error = ();
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         // Guild > neyoa joined.
         if let Some((_, user)) = regex_captures!(r#"^Guild > (\w+) joined.$"#, value) {
             return Ok(Self {
-                member: user.to_string(),
+                member: user,
                 online: true,
             });
         }
@@ -27,12 +28,26 @@ impl TryFrom<&str> for Toggle {
         // Guild > neyoa left.
         if let Some((_, user)) = regex_captures!(r#"^Guild > (\w+) left.$"#, value) {
             return Ok(Self {
-                member: user.to_string(),
+                member: user,
                 online: false,
             });
         }
 
         Err(())
+    }
+}
+
+impl Display for Toggle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{member} {state}",
+            member = self.member,
+            state = match self.online {
+                true => "connected",
+                false => "disconnected",
+            }
+        )
     }
 }
 

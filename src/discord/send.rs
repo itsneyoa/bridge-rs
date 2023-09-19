@@ -3,7 +3,7 @@ use crate::{
     bridge::Chat,
     discord::Discord,
     minecraft,
-    payloads::events::{self, ChatEvent, Message, Toggle},
+    payloads::events::{self, ChatEvent, Message, RawChatEvent, Toggle},
 };
 use std::{ops::Deref, sync::Arc};
 use twilight_model::{
@@ -30,10 +30,10 @@ impl MinecraftHandler {
         Self(discord)
     }
 
-    pub async fn handle_event(&self, event: ChatEvent) {
-        self.add_event_to_autocomplete(&event);
+    pub async fn handle_event(&self, event: RawChatEvent) {
+        self.add_event_to_autocomplete(event.as_chat_event());
 
-        match event {
+        match event.as_chat_event() {
             ChatEvent::Message(Message {
                 author,
                 content,
@@ -51,10 +51,10 @@ impl MinecraftHandler {
                         webhook.id,
                         webhook.token.as_ref().expect("Webhook has no token"),
                     )
-                    .username(&author)
+                    .username(author)
                     .expect("Invalid webhook username")
-                    .avatar_url(&avatar_url(&author))
-                    .content(&content)
+                    .avatar_url(&avatar_url(author))
+                    .content(content)
                     .expect("Invalid webhook content")
                     .allowed_mentions(Some(&AllowedMentions {
                         parse: vec![MentionType::Users],
@@ -88,9 +88,9 @@ impl MinecraftHandler {
                         webhook.id,
                         webhook.token.as_ref().expect("Webhook has no token"),
                     )
-                    .username(&member)
+                    .username(member)
                     .expect("Invalid webhook username")
-                    .avatar_url(&avatar_url(&member))
+                    .avatar_url(&avatar_url(member))
                     .embeds(&[embed])
                     .expect("Invalid webhook embeds")
                     .allowed_mentions(Some(&AllowedMentions {
@@ -114,7 +114,7 @@ impl MinecraftHandler {
                     Join(member) => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Joined!")
-                                .icon_url(avatar_source(&member))
+                                .icon_url(avatar_source(member))
                                 .build(),
                         )
                         .description(format!("`{member}` joined the guild"))
@@ -123,7 +123,7 @@ impl MinecraftHandler {
                     Leave(member) => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Left")
-                                .icon_url(avatar_source(&member))
+                                .icon_url(avatar_source(member))
                                 .build(),
                         )
                         .description(format!("`{member}` left the guild"))
@@ -132,7 +132,7 @@ impl MinecraftHandler {
                     Kick { member, by } => EmbedBuilder::new()
                         .author(
                             EmbedAuthorBuilder::new("Member Kicked")
-                                .icon_url(avatar_source(&member))
+                                .icon_url(avatar_source(member))
                                 .build(),
                         )
                         .description(format!("`{member}` was kicked by `{by}`"))
@@ -251,7 +251,7 @@ impl MinecraftHandler {
             .expect("Failed to get webhook")
     }
 
-    fn add_event_to_autocomplete(&self, event: &ChatEvent) {
+    fn add_event_to_autocomplete(&self, event: ChatEvent) {
         use crate::discord::autocomplete;
         use crate::payloads::events::{GuildEvent, Moderation};
 

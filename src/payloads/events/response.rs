@@ -1,11 +1,12 @@
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_captures;
+use std::fmt::Display;
 
-#[derive(Event, Debug, Clone, PartialEq)]
-pub enum Response {
-    PlayerNotInGuild(String),
+#[derive(Event, Debug, PartialEq)]
+pub enum Response<'a> {
+    PlayerNotInGuild(&'a str),
     NoPermission,
-    PlayerNotFound(String),
+    PlayerNotFound(&'a str),
     CommandDisabled,
     BotNotInGuild,
 }
@@ -17,14 +18,14 @@ const NO_PERMISSION: &[&str] = &[
     "I'm sorry, but you do not have permission to perform this command. Please contact the server administrators if you believe that this is in error."
 ];
 
-impl TryFrom<&str> for Response {
+impl<'a> TryFrom<&'a str> for Response<'a> {
     type Error = ();
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         if let Some((_, username)) =
             regex_captures!(r#"^(?:\[.+?\] )?(\w+) is not in your guild!$"#, value)
         {
-            return Ok(Self::PlayerNotInGuild(username.to_string()));
+            return Ok(Self::PlayerNotInGuild(username));
         }
 
         if NO_PERMISSION.contains(&value) {
@@ -34,7 +35,7 @@ impl TryFrom<&str> for Response {
         if let Some((_, username)) =
             regex_captures!(r#"^Can't find a player by the name of '(\w+)'$"#, value)
         {
-            return Ok(Self::PlayerNotFound(username.to_string()));
+            return Ok(Self::PlayerNotFound(username));
         }
 
         if value == r#"This command is currently disabled."# {
@@ -49,14 +50,14 @@ impl TryFrom<&str> for Response {
     }
 }
 
-impl ToString for Response {
-    fn to_string(&self) -> String {
+impl Display for Response<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PlayerNotInGuild(user) => format!("`{user}` is not in the guild"),
-            Self::NoPermission => "I don't have permission to do that".to_string(),
-            Self::PlayerNotFound(user) => format!("`{user}` could not be found"),
-            Self::CommandDisabled => "This command is currently disabled".to_string(),
-            Self::BotNotInGuild => "I'm not in a guild".to_string(),
+            Self::PlayerNotInGuild(user) => write!(f, "`{user}` is not in the guild"),
+            Self::NoPermission => write!(f, "I don't have permission to do that"),
+            Self::PlayerNotFound(user) => write!(f, "`{user}` could not be found"),
+            Self::CommandDisabled => write!(f, "This command is currently disabled"),
+            Self::BotNotInGuild => write!(f, "I'm not in a guild"),
         }
     }
 }
@@ -69,14 +70,12 @@ mod tests {
     #[test_case("neyoa is not in your guild!" ; "Ro rank")]
     #[test_case("[MVP+] neyoa is not in your guild!" ; "Rank")]
     fn not_in_guild(input: &str) {
-        assert!(
-            Response::try_from(input).unwrap() == Response::PlayerNotInGuild("neyoa".to_string())
-        )
+        assert!(Response::try_from(input).unwrap() == Response::PlayerNotInGuild("neyoa"))
     }
 
     #[test_case("Can't find a player by the name of 'neyoa'" ; "Player not found")]
     fn player_not_found(input: &str) {
-        assert!(Response::try_from(input).unwrap() == Response::PlayerNotFound("neyoa".to_string()))
+        assert!(Response::try_from(input).unwrap() == Response::PlayerNotFound("neyoa"))
     }
 
     #[test_case("This command is currently disabled." ; "Command Disabled")]

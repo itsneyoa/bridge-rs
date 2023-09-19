@@ -1,5 +1,6 @@
 use azalea::{ecs::prelude::*, prelude::*};
 use lazy_regex::regex_captures;
+use std::fmt::Display;
 
 /// A player or the guild chat was muted or unmuted.
 ///
@@ -8,32 +9,32 @@ use lazy_regex::regex_captures;
 /// - `neyoa has unmuted neytwoa`
 /// - `neyoa has muted the guild chat for 30d`
 /// - `neyoa has unmuted the guild chat!`
-#[derive(Event, Debug, Clone)]
-pub enum Moderation {
+#[derive(Event, Debug)]
+pub enum Moderation<'a> {
     Mute {
-        member: Option<String>,
-        by: String,
+        member: Option<&'a str>,
+        by: &'a str,
         length: u8,
         unit: MuteUnit,
     },
     Unmute {
-        member: Option<String>,
-        by: String,
+        member: Option<&'a str>,
+        by: &'a str,
     },
 }
 
-impl TryFrom<&str> for Moderation {
+impl<'a> TryFrom<&'a str> for Moderation<'a> {
     type Error = ();
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         // neytwoa has muted neyoa for 30d
         if let Some((_, by, user, length, unit)) = regex_captures!(
             r#"^(?:\[[\w+]+\] )?(\w+) has muted (?:\[[\w+]+\] )?(\w+) for (\d{1,2})([mhd])$"#,
             value
         ) {
             return Ok(Self::Mute {
-                member: Some(user.to_string()),
-                by: by.to_string(),
+                member: Some(user),
+                by,
                 length: length.parse().map_err(|_| ())?,
                 unit: unit.chars().next().ok_or(())?.try_into()?,
             });
@@ -45,8 +46,8 @@ impl TryFrom<&str> for Moderation {
             value
         ) {
             return Ok(Self::Unmute {
-                member: Some(user.to_string()),
-                by: by.to_string(),
+                member: Some(user),
+                by,
             });
         }
 
@@ -57,7 +58,7 @@ impl TryFrom<&str> for Moderation {
         ) {
             return Ok(Self::Mute {
                 member: None,
-                by: user.to_string(),
+                by: user,
                 length: length.parse().map_err(|_| ())?,
                 unit: unit.chars().next().ok_or(())?.try_into()?,
             });
@@ -70,11 +71,33 @@ impl TryFrom<&str> for Moderation {
         ) {
             return Ok(Self::Unmute {
                 member: None,
-                by: user.to_string(),
+                by: user,
             });
         }
 
         Err(())
+    }
+}
+
+impl Display for Moderation<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Moderation::Mute {
+                member,
+                by,
+                length,
+                unit,
+            } => write!(
+                f,
+                "{by} muted {member} for {length}{unit}",
+                member = member.unwrap_or("Guild Chat")
+            ),
+            Moderation::Unmute { member, by } => write!(
+                f,
+                "{by} unmuted {member}",
+                member = member.unwrap_or("Guild Chat")
+            ),
+        }
     }
 }
 
@@ -131,7 +154,7 @@ mod tests {
             unit,
         } = input.try_into().unwrap()
         {
-            assert_eq!(member, Some("neyoa".to_string()));
+            assert_eq!(member, Some("neyoa"));
             assert_eq!(by, "neytwoa");
             assert_eq!(length, 30);
             assert_eq!(unit, expected);
@@ -146,7 +169,7 @@ mod tests {
     #[test_case("[VIP+] neytwoa has unmuted [MVP+] neyoa" ; "Both have Ranks")]
     fn unmute(input: &'static str) {
         if let Moderation::Unmute { member, by } = input.try_into().unwrap() {
-            assert_eq!(member, Some("neyoa".to_string()));
+            assert_eq!(member, Some("neyoa"));
             assert_eq!(by, "neytwoa");
         } else {
             panic!("Expected Unmute")

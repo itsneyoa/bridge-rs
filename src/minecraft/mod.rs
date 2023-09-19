@@ -3,7 +3,7 @@ pub mod swarm;
 
 use crate::payloads::{
     command::{CommandPayload, MinecraftCommand},
-    events::ChatEvent,
+    events::RawChatEvent,
 };
 use azalea::{
     app::{Plugin, Update},
@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 
 pub static USERNAME: OnceCell<RwLock<String>> = OnceCell::new();
 
-type Sender = async_broadcast::Sender<ChatEvent>;
+type Sender = async_broadcast::Sender<RawChatEvent>;
 type Receiver = Arc<Mutex<mpsc::UnboundedReceiver<CommandPayload>>>;
 
 pub struct MinecraftBridgePlugin {
@@ -69,13 +69,13 @@ fn update_username(
 
 fn handle_incoming_chats(
     mut reader: EventReader<ChatReceivedEvent>,
-    mut writer: EventWriter<ChatEvent>,
+    mut writer: EventWriter<RawChatEvent>,
 ) {
     for event in reader.iter() {
         let content = event.packet.content();
         log::info!("Minecraft Chat: {}", content);
 
-        writer.send(ChatEvent::from(content.as_str()))
+        writer.send(RawChatEvent(content))
     }
 }
 
@@ -105,6 +105,7 @@ fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: 
             Demote(player) => format!("/g demote {player}"),
             Promote(player) => format!("/g promote {player}"),
             SetRank(player, rank) => format!("/g setrank {player} {rank}"),
+            Execute(command) => format!("/{command}"),
         };
 
         assert!(command.len() <= 256, "Command too long: {command}");
