@@ -31,7 +31,7 @@ pub async fn run() -> errors::Result<()> {
         (to_minecraft, from_minecraft),
     );
 
-    discord.register_commands().await?;
+    discord.setup_commands().await?;
 
     discord.start();
 

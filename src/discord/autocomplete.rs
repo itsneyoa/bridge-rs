@@ -1,16 +1,15 @@
+use crate::minecraft;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use sorted_vec::SortedSet;
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
-use crate::minecraft;
-
-static USERNAMES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static USERNAMES: Lazy<Mutex<HashSet<Arc<str>>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static MATCHER: Lazy<SkimMatcherV2> = Lazy::new(|| SkimMatcherV2::default().ignore_case());
 
 #[derive(Eq)]
-struct MatcherResult(String, i64);
+struct MatcherResult(Arc<str>, i64);
 
 impl PartialEq for MatcherResult {
     fn eq(&self, other: &Self) -> bool {
@@ -30,14 +29,12 @@ impl Ord for MatcherResult {
     }
 }
 
-pub fn add_username(username: impl ToString) {
-    let username = username.to_string();
-
+pub fn add_username(username: &str) {
     if username == *minecraft::USERNAME.wait().read() {
         return; // Don't add the bot's username to autocomplete
     }
 
-    USERNAMES.lock().insert(username);
+    USERNAMES.lock().insert(Arc::from(username));
 }
 
 pub fn remove_username(username: &str) {
@@ -46,7 +43,7 @@ pub fn remove_username(username: &str) {
 
 /// Returns a list of members that match the input, returning **all** matches.
 /// To trim the list to a specific size, use `matches.into_iter().take(n)`.
-pub fn get_matches(input: &str) -> Vec<String> {
+pub fn get_matches(input: &str) -> Vec<Arc<str>> {
     let members = USERNAMES.lock();
     let mut matches = SortedSet::with_capacity(members.len());
 

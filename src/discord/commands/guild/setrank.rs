@@ -44,9 +44,8 @@ impl RunCommand for SetRankCommand {
 
         let rank = CleanString::from(
             self.rank
-                .clone()
                 .chars()
-                .filter(|c| c.is_alphanumeric() || ' '.eq(c))
+                .filter(|c| c.is_ascii_alphanumeric() || ' '.eq(c))
                 .collect::<String>()
                 .trim()
                 .to_string(),

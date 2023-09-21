@@ -116,7 +116,7 @@ impl Feedback {
         let (verify_tx, verify_rx) = oneshot::channel();
 
         self.tx
-            .send(CommandPayload::new(command.clone(), verify_tx))
+            .send(CommandPayload::new(command, verify_tx))
             .expect("Minecraft payload receiver was dropped");
 
         verify_rx

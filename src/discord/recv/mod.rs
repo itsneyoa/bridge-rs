@@ -281,8 +281,8 @@ impl DiscordHandler {
                         InteractionResponseDataBuilder::new()
                             .choices(autocomplete::get_matches(focused).into_iter().take(25).map(
                                 |member| CommandOptionChoice {
-                                    name: member.clone(),
-                                    value: CommandOptionChoiceValue::String(member),
+                                    name: member.to_string(),
+                                    value: CommandOptionChoiceValue::String(member.to_string()),
                                     name_localizations: None,
                                 },
                             ))

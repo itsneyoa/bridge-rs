@@ -41,7 +41,7 @@ impl ChatCommand {
             .take(256 - 1 - chat.prefix().chars().count() - 1 - clean_author.chars().count() - 2)
             .collect::<CleanString>();
 
-        if author != clean_author || message != clean_message {
+        if author.as_str() != clean_author || message.as_str() != clean_message {
             issues.push(reactions::IllegalCharacters);
         }
 
@@ -90,8 +90,8 @@ impl RunCommand for ChatCommand {
                     .wait()
                     .read()
                     .eq_ignore_ascii_case(author)
-                && content.starts_with(self.author.as_str())
-                && content.ends_with(self.message.as_str()) =>
+                && content.starts_with(&*self.author)
+                && content.ends_with(&*self.message) =>
             {
                 Some(Success)
             }

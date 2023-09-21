@@ -11,7 +11,7 @@ use tokio::sync::oneshot;
 pub type Notifier = Arc<Mutex<Option<oneshot::Sender<()>>>>;
 
 /// A Payload sent to Minecraft
-#[derive(Event, Debug, Clone)]
+#[derive(Event, Debug)]
 #[non_exhaustive]
 pub struct CommandPayload {
     pub command: MinecraftCommand,
@@ -27,7 +27,7 @@ impl CommandPayload {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum MinecraftCommand {
     /// A message to the guild or officer chat
     ChatMessage(CleanString, CleanString, Chat),

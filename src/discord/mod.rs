@@ -83,7 +83,7 @@ impl Discord {
         }
     }
 
-    pub async fn register_commands(&self) -> Result<()> {
+    pub async fn setup_commands(&self) -> Result<()> {
         commands::register_commands(&self.http).await
     }
 
