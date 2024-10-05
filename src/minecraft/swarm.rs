@@ -74,7 +74,7 @@ async fn handle_swarm(
 ) -> anyhow::Result<()> {
     match event {
         SwarmEvent::Init => status::send(status::Online).await,
-        SwarmEvent::Disconnect(account) => {
+        SwarmEvent::Disconnect(account, _) => {
             swarm.add_and_retry_forever(&account, State).await;
         }
         _ => {}

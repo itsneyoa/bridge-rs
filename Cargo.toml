@@ -7,7 +7,7 @@ edition = "2021"
 members = ["twilight-webhook"]
 
 [dependencies]
-azalea = { git = "https://github.com/azalea-rs/azalea", rev = "4f288b1", default-features = false }
+azalea = { git = "https://github.com/azalea-rs/azalea", version = "0.10.1", default-features = false }
 parking_lot = "0.12.1"
 tokio = { version = "1.36.0", features = [
     "macros",
