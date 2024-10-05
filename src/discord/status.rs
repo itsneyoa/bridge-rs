@@ -84,7 +84,7 @@ pub async fn send(status: Status<'_>) {
             .expect("Embed is invalid")
             .await
         {
-            log::warn!("Failed to send status embed: {e}")
+            tracing::warn!("Failed to send status embed: {e}")
         }
     }
 }

@@ -108,7 +108,7 @@ impl Discord {
                             });
                         }
                         Err(error) => {
-                            log::error!("Shard error: {:?}", error);
+                            tracing::error!("Shard error: {:?}", error);
                         }
                     }
                 }
@@ -126,7 +126,7 @@ impl Discord {
                 tokio::spawn(async move { handler.handle_event(event).await });
             }
 
-            log::error!("Minecraft -> Discord receive channel closed");
+            tracing::error!("Minecraft -> Discord receive channel closed");
         });
     }
 }

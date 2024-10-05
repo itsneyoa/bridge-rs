@@ -1,25 +1,15 @@
 use crate::{config, discord::status, minecraft::MinecraftBridgePlugin};
-use azalea::{
-    app::PluginGroup,
-    prelude::*,
-    swarm::{prelude::*, DefaultSwarmPlugins, SwarmStartError},
-    ClientInformation, DefaultBotPlugins, DefaultPlugins,
-};
+use azalea::{prelude::*, swarm::prelude::*, ClientInformation, StartError};
 
 pub async fn run(
     account: Account,
     (tx, rx): (super::Sender, super::Receiver),
-) -> Result<(), SwarmStartError> {
-    SwarmBuilder::new_without_plugins()
-        .add_plugins((
-            DefaultPlugins.build().disable::<bevy_log::LogPlugin>(),
-            DefaultBotPlugins,
-            DefaultSwarmPlugins,
-            MinecraftBridgePlugin {
-                sender: tx,
-                receiver: rx,
-            },
-        ))
+) -> Result<(), StartError> {
+    SwarmBuilder::new()
+        .add_plugins(MinecraftBridgePlugin {
+            sender: tx,
+            receiver: rx,
+        })
         .set_swarm_handler(handle_swarm)
         .set_swarm_state(SwarmState)
         .set_handler(handle)
@@ -32,7 +22,7 @@ pub async fn run(
             )
             .as_str(),
         )
-        .await
+        .await?
 }
 
 /// State local to the individual bot.
@@ -52,7 +42,15 @@ async fn handle(bot: Client, event: Event, _state: State) -> anyhow::Result<()> 
             })
             .await
         }?,
-        Event::Login => status::send(status::Connected(bot.profile.name.clone())).await,
+        Event::Login => {
+            tracing::info!(
+                "Connected to {}:{} as {}",
+                config().server_address,
+                config().server_port,
+                bot.profile.name,
+            );
+            status::send(status::Connected(bot.profile.name.clone())).await;
+        }
         Event::Packet(packet) => {
             use azalea::protocol::packets::game::{
                 clientbound_disconnect_packet::ClientboundDisconnectPacket as DisconnectPacket,
@@ -75,13 +73,12 @@ async fn handle_swarm(
     _state: SwarmState,
 ) -> anyhow::Result<()> {
     match event {
-        SwarmEvent::Init => unreachable!("SwarmEvent::Init currently never gets triggered"),
-
+        SwarmEvent::Init => status::send(status::Online).await,
         SwarmEvent::Disconnect(account) => {
-            swarm.add_with_exponential_backoff(&account, State).await;
+            swarm.add_and_retry_forever(&account, State).await;
         }
         _ => {}
-    };
+    }
 
     Ok(())
 }

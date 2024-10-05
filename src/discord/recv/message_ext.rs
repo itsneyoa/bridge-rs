@@ -97,7 +97,7 @@ impl MessageExt for Message {
                 )
                 .await
             {
-                log::warn!("Failed to react to message: {err}");
+                tracing::warn!("Failed to react to message: {err}");
             }
         });
     }

@@ -9,8 +9,8 @@ use azalea::{
     app::{Plugin, Update},
     chat::{ChatReceivedEvent, SendChatEvent},
     ecs::prelude::*,
-    entity::Local,
-    packet_handling::PacketEvent,
+    entity::LocalEntity,
+    packet_handling::game::PacketEvent,
     prelude::*,
     protocol::packets::game::ClientboundGamePacket,
     GameProfileComponent,
@@ -56,10 +56,10 @@ impl Plugin for MinecraftBridgePlugin {
 
 fn update_username(
     mut reader: EventReader<PacketEvent>,
-    query: Query<&GameProfileComponent, With<Local>>,
+    query: Query<&GameProfileComponent, With<LocalEntity>>,
 ) {
-    for event in reader.iter() {
-        if let ClientboundGamePacket::Login(_) = &event.packet {
+    for event in reader.read() {
+        if let ClientboundGamePacket::Login(_) = *event.packet {
             let ign = &query.get_single().expect("Not in world").name;
 
             *USERNAME.get_or_init(|| RwLock::new(ign.clone())).write() = ign.clone();
@@ -71,11 +71,11 @@ fn handle_incoming_chats(
     mut reader: EventReader<ChatReceivedEvent>,
     mut writer: EventWriter<RawChatEvent>,
 ) {
-    for event in reader.iter() {
+    for event in reader.read() {
         let content = event.packet.content();
-        log::info!("Minecraft Chat: {}", content);
+        tracing::info!("Minecraft Chat: {}", content);
 
-        writer.send(RawChatEvent(content))
+        writer.send(RawChatEvent(content));
     }
 }
 
@@ -86,7 +86,7 @@ struct ChatQueue {
 }
 
 fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: ResMut<ChatQueue>) {
-    for event in reader.iter() {
+    for event in reader.read() {
         use MinecraftCommand::*;
 
         let command = match &event.command {
@@ -110,7 +110,7 @@ fn handle_outgoing_commands(mut reader: EventReader<CommandPayload>, mut queue: 
 
         assert!(command.len() <= 256, "Command too long: {command}");
 
-        log::debug!("Sending to Minecraft: {}", command);
+        tracing::debug!("Sending to Minecraft: {}", command);
 
         queue.messages.push_back((
             command,
@@ -123,7 +123,7 @@ const DELAY_BETWEEN_MESSAGES: usize = 5;
 
 fn drain_message_queue(
     mut queue: ResMut<ChatQueue>,
-    mut query: Query<Entity, With<Local>>,
+    mut query: Query<Entity, With<LocalEntity>>,
     mut writer: EventWriter<SendChatEvent>,
 ) {
     let Ok(entity) = query.get_single_mut() else {

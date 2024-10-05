@@ -6,7 +6,7 @@ pub enum Error {
 
     // Minecraft
     #[error(transparent)]
-    Join(#[from] azalea::swarm::SwarmStartError),
+    Join(#[from] azalea::StartError),
 
     // Discord
     #[error(transparent)]

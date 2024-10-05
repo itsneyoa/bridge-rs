@@ -60,9 +60,7 @@ impl RunCommand for HelpCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::test_command;
-    use super::*;
-    use crate::config;
+    use super::{super::testing::test_command, *};
 
     #[test]
     fn help() {

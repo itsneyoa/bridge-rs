@@ -52,11 +52,13 @@ impl<S: Event + Clone, R: Event> Plugin for MpscAdapterPlugin<S, R> {
 fn handle_recv<R: Event>(rx: Res<ResourceWrapper<Receiver<R>>>, mut writer: EventWriter<R>) {
     loop {
         match rx.lock().try_recv() {
-            Ok(event) => writer.send(event),
+            Ok(event) => {
+                writer.send(event);
+            }
             Err(err) => match err {
                 mpsc::error::TryRecvError::Empty => return,
                 mpsc::error::TryRecvError::Disconnected => {
-                    log::warn!("Mpsc Adapter recv channel closed");
+                    tracing::warn!("Mpsc Adapter recv channel closed");
                     return;
                 }
             },
@@ -65,7 +67,7 @@ fn handle_recv<R: Event>(rx: Res<ResourceWrapper<Receiver<R>>>, mut writer: Even
 }
 
 fn handle_send<S: Event + Clone>(mut reader: EventReader<S>, tx: Res<ResourceWrapper<Sender<S>>>) {
-    for event in reader.iter() {
+    for event in reader.read() {
         block_on(async {
             tx.broadcast(event.clone())
                 .await

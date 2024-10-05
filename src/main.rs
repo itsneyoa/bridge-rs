@@ -9,35 +9,16 @@ mod sanitizer;
 pub use config::config;
 use discord::status;
 pub use errors::*;
-use tokio::sync::oneshot;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
 async fn main() -> errors::Result<()> {
-    pretty_env_logger::init();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
     dotenvy::dotenv().ok();
     config::init(config::Config::new_from_env()?);
-
-    // Graciously quit on any panics, usually bevy just prints them and continues
-    let panic = {
-        use parking_lot::Mutex;
-        use std::{panic, sync::Arc};
-
-        let (tx, rx) = oneshot::channel();
-        let tx = Arc::new(Mutex::new(Some(tx)));
-        let hook = panic::take_hook();
-
-        panic::set_hook(Box::new(move |panic_info| {
-            // Call the original panic handler
-            hook(panic_info);
-
-            if let Some(tx) = tx.lock().take() {
-                tx.send(panic_info.to_string())
-                    .expect("Failed to send panic info");
-            }
-        }));
-
-        rx
-    };
 
     #[cfg(debug_assertions)]
     {
@@ -74,14 +55,12 @@ async fn main() -> errors::Result<()> {
                 .expect("Failed to listen for ctrl-c");
 
             Err(Error::Terminated) as errors::Result<()>
-        },
-        async {
-            Err(Error::Panic(panic.await.expect("Panic handler dropped"))) as errors::Result<()>
         }
     )
     .expect_err("Bridge can only exit with an error");
 
     status::send(status::Offline(&reason)).await;
+    tracing::error!("{reason}");
 
     Err(reason)
 }

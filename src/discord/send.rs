@@ -63,7 +63,7 @@ impl MinecraftHandler {
                     }))
                     .await
                 {
-                    log::error!("Failed to execute webhook: {err}");
+                    tracing::error!("Failed to execute webhook: {err}");
                 };
             }
 
@@ -100,7 +100,7 @@ impl MinecraftHandler {
                     }))
                     .await
                 {
-                    log::error!("Failed to execute webhook: {err}");
+                    tracing::error!("Failed to execute webhook: {err}");
                 };
             }
 
@@ -237,7 +237,7 @@ impl MinecraftHandler {
             .expect("Failed to add embed")
             .await
         {
-            log::error!("Failed to send member embed: {err}")
+            tracing::error!("Failed to send member embed: {err}")
         }
     }
 

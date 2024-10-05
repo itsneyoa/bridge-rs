@@ -51,7 +51,7 @@ impl DiscordHandler {
     }
 
     pub async fn handle_discord_event(&self, event: Event) {
-        log::trace!("{event:?}");
+        tracing::trace!("{event:?}");
         self.cache.update(&event);
 
         if let Err(e) = self
@@ -70,7 +70,7 @@ impl DiscordHandler {
 
         match event {
             Event::Ready(ready) => {
-                log::info!("{} is connected!", ready.user.name);
+                tracing::info!("{} is connected!", ready.user.name);
             }
             Event::MessageCreate(message) => {
                 self.handle_message_create(*message).await;
@@ -87,7 +87,7 @@ impl DiscordHandler {
             return;
         }
 
-        log::info!(
+        tracing::info!(
             "Discord Message: {} - {} (#{})",
             message.author.name,
             message.content,
@@ -154,7 +154,7 @@ impl DiscordHandler {
                 };
 
                 if let Err(err) = self.handle_command_interaction(interaction, *data).await {
-                    log::error!("Failed to handle command interaction: {err}")
+                    tracing::error!("Failed to handle command interaction: {err}")
                 }
             }
             InteractionType::ApplicationCommandAutocomplete => {
@@ -170,7 +170,7 @@ impl DiscordHandler {
                     .handle_autocomplete_interaction(interaction, *data)
                     .await
                 {
-                    log::error!("Failed to handle autocomplete interaction: {err}")
+                    tracing::error!("Failed to handle autocomplete interaction: {err}")
                 }
             }
             _ => {}
@@ -186,7 +186,7 @@ impl DiscordHandler {
         let name = data.name.clone();
 
         let Some(command) = super::commands::get_run_command(data) else {
-            log::warn!("Unknown command executed: {name}");
+            tracing::warn!("Unknown command executed: {name}");
 
             let embed = EmbedBuilder::new()
                 .description("Command not found")

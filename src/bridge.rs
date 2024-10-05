@@ -1,8 +1,4 @@
-use crate::{
-    config,
-    discord::{status, Discord},
-    errors, minecraft,
-};
+use crate::{config, discord::Discord, errors, minecraft};
 use azalea::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -34,8 +30,6 @@ pub async fn run() -> errors::Result<()> {
     discord.setup_commands().await?;
 
     discord.start();
-
-    status::send(status::Online).await;
 
     Err(
         minecraft::swarm::run(account, (to_discord, Arc::new(Mutex::new(from_discord))))
